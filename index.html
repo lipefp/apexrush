@@ -7360,6 +7360,122 @@ const _cv = new THREE.Vector3(); let _crewF = 0;
   }
   requestAnimationFrame(crewLoop);
 })();
+/* ================================================================
+   APEX RUSH V12 — HIGH-SPEED & COCKPIT ENVIRONMENT FX
+   Camada 100% visual: não altera movimento, aderência, freios ou IA.
+   ================================================================ */
+(function initApexRushV12VisualFX() {
+  if (document.getElementById('apxV12Fx')) return;
+  const fxCanvas = document.createElement('canvas');
+  fxCanvas.id = 'apxV12Fx';
+  fxCanvas.setAttribute('aria-hidden', 'true');
+  fxCanvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:3;pointer-events:none;opacity:1;';
+  document.body.appendChild(fxCanvas);
+  const fxCtx = fxCanvas.getContext('2d', { alpha: true });
+  let fxW = 1, fxH = 1, fxDpr = 1;
+  const fxResize = () => {
+    fxW = Math.max(1, window.innerWidth || 1);
+    fxH = Math.max(1, window.innerHeight || 1);
+    fxDpr = Math.min(window.devicePixelRatio || 1, quality ? 1.35 : 1);
+    fxCanvas.width = Math.round(fxW * fxDpr);
+    fxCanvas.height = Math.round(fxH * fxDpr);
+    fxCtx.setTransform(fxDpr, 0, 0, fxDpr, 0, 0);
+  };
+  window.addEventListener('resize', fxResize, { passive: true });
+  fxResize();
+
+  // Gotas persistentes: só são desenhadas em cockpit quando chove.
+  const drops = Array.from({ length: quality ? 34 : 16 }, (_, i) => ({
+    x: Math.random() * fxW,
+    y: Math.random() * fxH,
+    r: 0.7 + Math.random() * 1.9,
+    seed: i * 1.73 + Math.random() * 4
+  }));
+  const streakCount = quality ? 22 : 12;
+  const oldExtras = _extrasFrameFn;
+  _extrasFrameFn = function apxV12Frame(dt) {
+    if (oldExtras) oldExtras(dt);
+    try {
+      if (!fxCtx) return;
+      fxCtx.clearRect(0, 0, fxW, fxH);
+      const active = state === ST.PLAYING && started && state !== ST.PAUSED;
+      if (!active) return;
+
+      const speed = Math.hypot(player.vx || 0, player.vz || 0); // m/s
+      const speedFx = clamp((speed - 36) / 42, 0, 1);
+      const cockpit = camMode === 2;
+
+      // Linhas periféricas de velocidade: deixam o centro e HUD limpos.
+      if (speedFx > 0.015) {
+        fxCtx.save();
+        fxCtx.globalCompositeOperation = 'screen';
+        fxCtx.lineCap = 'round';
+        for (let i = 0; i < streakCount; i++) {
+          const side = (i & 1) ? 1 : -1;
+          const band = i % 6;
+          const edgeX = side < 0 ? 3 + band * 8 : fxW - 3 - band * 8;
+          const travel = (clock * (42 + speed * 1.55) + i * 97.3) % (fxH + 90);
+          const y = travel - 45;
+          const length = (10 + speedFx * 62) * (0.45 + (i % 4) * 0.18);
+          const alpha = (0.025 + speedFx * 0.105) * (0.55 + (i % 3) * 0.18);
+          fxCtx.strokeStyle = `rgba(190,215,255,${alpha})`;
+          fxCtx.lineWidth = 0.7 + speedFx * 0.65;
+          fxCtx.beginPath();
+          fxCtx.moveTo(edgeX, y);
+          fxCtx.lineTo(edgeX - side * length, y + (i % 2 ? -2.5 : 2.5));
+          fxCtx.stroke();
+        }
+        fxCtx.restore();
+      }
+
+      // Microgotas no visor/câmera cockpit em pista molhada, sem cobrir o HUD.
+      if (cockpit && wet) {
+        const wind = 34 + speed * 1.25;
+        fxCtx.save();
+        fxCtx.globalCompositeOperation = 'screen';
+        for (const d of drops) {
+          d.y -= wind * dt;
+          d.x += ((player.vl || 0) * 0.22 + Math.sin(clock * 0.7 + d.seed) * 2.2) * dt;
+          if (d.y < -18) { d.y = fxH + 8 + (d.seed % 23); d.x = (d.x + 137.5 + d.seed * 11) % fxW; }
+          if (d.x < -10) d.x = fxW + 8;
+          if (d.x > fxW + 10) d.x = -8;
+          const trail = Math.min(15, 2 + speed * 0.11);
+          fxCtx.strokeStyle = 'rgba(205,225,255,0.13)';
+          fxCtx.lineWidth = Math.max(0.55, d.r * 0.55);
+          fxCtx.beginPath();
+          fxCtx.moveTo(d.x, d.y);
+          fxCtx.lineTo(d.x - (player.vl || 0) * 0.012, d.y + trail);
+          fxCtx.stroke();
+          fxCtx.fillStyle = 'rgba(210,230,255,0.11)';
+          fxCtx.beginPath();
+          fxCtx.ellipse(d.x, d.y, d.r * 0.72, d.r * 1.18, -0.12, 0, Math.PI * 2);
+          fxCtx.fill();
+        }
+        fxCtx.restore();
+      }
+
+      // Resposta visual sutil ao tocar zebra: brilho periférico do lado do impacto.
+      if (player.kerb && speed > 30) {
+        const side = (player.lat || 0) >= 0 ? 1 : -1;
+        const pulse = 0.025 + 0.025 * (0.5 + 0.5 * Math.sin(clock * 34));
+        const gx = side > 0 ? fxW : 0;
+        const grad = fxCtx.createRadialGradient(gx, fxH * 0.58, 0, gx, fxH * 0.58, fxW * 0.34);
+        grad.addColorStop(0, `rgba(255,205,135,${pulse})`);
+        grad.addColorStop(1, 'rgba(255,205,135,0)');
+        fxCtx.fillStyle = grad;
+        fxCtx.fillRect(0, 0, fxW, fxH);
+      }
+    } catch (err) {
+      if (!window.__apxV12FxWarned) {
+        window.__apxV12FxWarned = true;
+        console.warn('[Apex Rush V12] efeitos visuais desativados após falha:', err);
+      }
+    }
+  };
+  window.__APEX_RUSH_VERSION__ = 'V12';
+  window.__apxV12Fx = { canvas: fxCanvas, get active() { return !!fxCtx; } };
+})();
+
 /*<END>*/
 </script>
 <div id="apxLoad" style="position:fixed;inset:0;z-index:9999;background:#0d0f16;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px;box-sizing:border-box;font-family:inherit;color:#e9ecf3;transition:opacity .45s">
