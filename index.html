@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Apex Rush — V10 Animações Mecânicas</title>
+<title>Apex Rush — V15 Focus HUD & Progressive Ride</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{width:100%;height:100%;overflow:hidden;background:#161826;color:#fff;
@@ -420,6 +420,135 @@
   }
 
 </style>
+
+<style id="apxV15FocusHUD">
+  /* V15: HUD limpo. Os elementos originais continuam no DOM para manter a lógica intacta. */
+  #hud{
+    top:10px!important;left:50%!important;right:auto!important;transform:translateX(-50%)!important;
+    display:flex;align-items:center;gap:4px!important;max-width:calc(100vw - 20px);
+    filter:drop-shadow(0 5px 16px rgba(0,0,0,.22));
+  }
+  #hud .cell{
+    min-width:clamp(54px,6.5vw,86px)!important;padding:6px 10px!important;
+    border:1px solid rgba(210,220,245,.11)!important;border-bottom:2px solid rgba(145,132,217,.58)!important;
+    border-radius:8px!important;background:rgba(12,15,24,.70)!important;
+    backdrop-filter:blur(9px) saturate(1.08);-webkit-backdrop-filter:blur(9px) saturate(1.08);
+  }
+  #hud .lbl{font-size:8px!important;letter-spacing:.13em!important;color:#8994a8!important}
+  #hud .val{font-size:clamp(13px,1.5vw,17px)!important;line-height:1.15}
+  #cBest,#cSec{display:none!important}
+  body.apxV15Details #cBest,body.apxV15Details #cSec{display:flex!important}
+  #btnPause,#apxV15DetailsBtn{
+    pointer-events:auto!important;height:36px;min-width:36px;padding:0 11px!important;margin:0!important;
+    border:1px solid rgba(210,220,245,.15)!important;border-radius:8px!important;
+    background:rgba(12,15,24,.78)!important;color:#dce4f4!important;
+    font:700 11px Inter,system-ui,sans-serif!important;letter-spacing:.08em;cursor:pointer;
+  }
+  #apxV15DetailsBtn{color:#c9c0ff!important;border-color:rgba(145,132,217,.4)!important}
+  #apxV15DetailsBtn[aria-pressed="true"]{background:rgba(93,79,155,.42)!important;border-color:#9184d9!important}
+
+  #tower{
+    left:12px!important;top:62px!important;max-width:190px;max-height:176px;overflow:hidden;
+    border:1px solid rgba(210,220,245,.10);border-radius:9px;background:rgba(10,13,21,.42);
+    box-shadow:0 8px 20px rgba(0,0,0,.13);font-size:11px!important;
+  }
+  #tower .row{min-width:0!important;padding:4px 7px!important;gap:6px!important;background:rgba(12,15,24,.62)!important}
+  #tower .row:nth-child(n+4):not(.me){display:none!important}
+  #tower .row.me{background:rgba(116,103,190,.27)!important;border-left-color:#a99bf5!important}
+  #tower .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tower .g{min-width:36px!important;font-size:9px!important}
+
+  #map{
+    left:12px!important;right:auto!important;top:auto!important;bottom:12px!important;
+    width:clamp(82px,9vw,104px)!important;height:clamp(82px,9vw,104px)!important;
+    border:1px solid rgba(210,220,245,.12);border-radius:9px!important;opacity:.82;
+  }
+  #dash{
+    left:50%!important;right:auto!important;bottom:9px!important;
+    transform:translateX(-50%) scale(.86)!important;transform-origin:bottom center!important;
+    gap:3px!important;filter:drop-shadow(0 6px 18px rgba(0,0,0,.23));
+  }
+  #dashERS,#dashTyre{padding:6px 9px 6px!important;border:1px solid rgba(210,220,245,.11);border-radius:8px 8px 0 0!important;
+    background:rgba(10,13,21,.72)!important;backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px)}
+  #ersGauge,#tyreGauge{width:52px!important;height:52px!important}
+  #ersCanvas,#tyreCanvas{width:52px!important;height:52px!important}
+  #ersPct,#tyrePct{font-size:14px!important}
+  #ersBadge{font-size:8px!important;padding:1px 5px!important}
+  #dashCenter{min-width:104px!important;padding:7px 12px 6px!important;gap:3px!important;
+    border:1px solid rgba(210,220,245,.12);border-radius:8px 8px 0 0!important;background:rgba(10,13,21,.78)!important;
+    backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px)}
+  #gear{font-size:35px!important}
+  #spdBig{font-size:28px!important}
+  #spdUnit{font-size:8px!important}
+  #rpmLeds{gap:2px!important}
+  .rled{width:9px!important;height:4px!important}
+  .tags{gap:3px!important}
+  .tag{font-size:9px!important;padding:1px 5px!important}
+
+  /* Painéis de informação secundária ficam recolhidos até o jogador pedir detalhes. */
+  #gfHud,#altGraph,#tyrePanel,#wheelKeys,#cockpitHud{display:none!important}
+  body.apxV15Details #gfHud{display:block!important;left:12px!important;bottom:122px!important;transform:scale(.82);transform-origin:bottom left}
+  body.apxV15Details #tyrePanel{display:block!important;right:12px!important;bottom:116px!important;top:auto!important;transform:scale(.90);transform-origin:bottom right}
+  body.apxV15Details #altGraph{display:block!important;left:auto!important;right:12px!important;top:70px!important;opacity:.82}
+  #radio{left:12px!important;bottom:clamp(116px,16vh,148px)!important;max-width:min(250px,42vw);
+    padding:6px 9px!important;border-left-color:#9184d9!important;border-radius:7px!important;
+    background:rgba(10,13,21,.72)!important;box-shadow:0 8px 18px rgba(0,0,0,.13)}
+  #cornerBanner{top:58px!important;font-size:11px!important;padding:5px 12px!important;letter-spacing:1.2px!important}
+  #ghostDeltaHud{font-size:14px!important;top:58px!important;right:12px!important}
+
+  /* Telemetria detalhada V14: sai do centro e só aparece no modo DADOS. */
+  #apxV14Panel{
+    top:62px!important;left:auto!important;right:12px!important;transform:none!important;
+    width:min(268px,calc(100vw - 24px))!important;padding:8px 10px!important;
+    opacity:0!important;visibility:hidden!important;pointer-events:none!important;
+  }
+  body.apxV15Details #apxV14Panel.live{opacity:1!important;visibility:visible!important}
+  #apxV14Panel .v14Value{font-size:17px!important}
+
+  /* Sobrescreve também os posicionamentos específicos do cockpit herdados da V14. */
+  body.cockpit #hud{left:50%!important;right:auto!important;top:10px!important;transform:translateX(-50%)!important;max-width:calc(100vw - 20px)!important}
+  body.cockpit #tower{left:12px!important;top:62px!important;max-width:190px!important;max-height:176px!important}
+  body.cockpit #map{left:12px!important;right:auto!important;bottom:12px!important;top:auto!important;width:clamp(82px,9vw,104px)!important;height:clamp(82px,9vw,104px)!important}
+  body.cockpit #dash{left:50%!important;right:auto!important;bottom:9px!important;transform:translateX(-50%) scale(.86)!important;transform-origin:bottom center!important}
+  body.cockpit #radio{left:12px!important;bottom:clamp(116px,16vh,148px)!important;max-width:min(250px,42vw)!important}
+
+  @media(max-width:900px){
+    #hud{top:7px!important;gap:2px!important;max-width:calc(100vw - 12px)}
+    body.cockpit #hud{left:50%!important;right:auto!important;top:7px!important;transform:translateX(-50%)!important;max-width:calc(100vw - 12px)!important}
+    body.cockpit #tower{left:7px!important;top:48px!important;max-width:145px!important;max-height:140px!important}
+    body.cockpit #map{left:7px!important;right:auto!important;bottom:7px!important;top:auto!important;width:76px!important;height:76px!important}
+    body.cockpit #dash{left:50%!important;right:auto!important;bottom:6px!important;transform:translateX(-50%) scale(.66)!important}
+    body.cockpit #radio{left:7px!important;bottom:88px!important;max-width:48vw!important}
+    #hud .cell{min-width:42px!important;padding:5px 6px!important}
+    #hud .lbl{font-size:7px!important;letter-spacing:.08em!important}
+    #hud .val{font-size:12px!important}
+    #btnPause,#apxV15DetailsBtn{height:31px;min-width:31px;padding:0 7px!important;font-size:9px!important}
+    #tower{left:7px!important;top:48px!important;max-width:145px;max-height:140px}
+    #tower .row{padding:3px 5px!important;gap:4px!important}
+    #map{left:7px!important;bottom:7px!important;width:76px!important;height:76px!important}
+    #dash{bottom:6px!important;transform:translateX(-50%) scale(.66)!important}
+    body.touch #dash{transform:translateX(-50%) scale(.60)!important}
+    #radio{left:7px!important;bottom:88px!important;max-width:48vw;font-size:10px!important}
+    #apxV14Panel{top:48px!important;right:7px!important;width:min(235px,calc(100vw - 14px))!important}
+    body.apxV15Details #gfHud{left:7px!important;bottom:88px!important;transform:scale(.66);transform-origin:bottom left}
+    body.apxV15Details #tyrePanel{right:7px!important;bottom:88px!important;transform:scale(.72);transform-origin:bottom right}
+    body.apxV15Details #altGraph{display:none!important}
+    #ghostDeltaHud{top:48px!important;right:7px!important;font-size:11px!important}
+  }
+  @media(max-width:520px){
+    body.cockpit #dash{left:50%!important;right:auto!important;bottom:6px!important;transform:translateX(-50%) scale(.54)!important}
+    #cBest,#cSec{display:none!important}
+    #hud .cell{min-width:36px!important;padding:4px 5px!important}
+    #hud .val{font-size:11px!important}
+    #apxV15DetailsBtn{font-size:8px!important;padding:0 6px!important}
+    #tower{max-width:126px}
+    #dash{transform:translateX(-50%) scale(.54)!important}
+    body.touch #dash{transform:translateX(-50%) scale(.50)!important}
+    #map{width:64px!important;height:64px!important}
+  }
+  @media(prefers-reduced-motion:reduce){#hud,#dash,#tower,#apxV14Panel{transition:none!important;animation:none!important}}
+</style>
+
 </head>
 <body>
 <canvas id="c"></canvas>
@@ -3649,6 +3778,13 @@ function updateCarRide(car, r, dt, throttle, brake, steer) {
   const h = r.h || 0, ch = Math.cos(h), sh = Math.sin(h);
   const centerH = groundH(r.x, r.z), slope = slopeAt(r.x, r.z, h);
   const speed = Math.abs(r.vf !== undefined ? r.vf : (r.v || 0));
+  // Resposta visual do conjunto: filtra a entrada do freio para o mergulho da carroceria
+  // acontecer de forma progressiva. Não altera inputBrake, forças ou desaceleração.
+  const brakeRawVisual = clamp(Number(brake) || 0, 0, 1);
+  if (!Number.isFinite(car._v15BrakeVisual)) car._v15BrakeVisual = brakeRawVisual;
+  const brakeVisualBlend = 1 - Math.exp(-Math.max(0, dt) * 13);
+  car._v15BrakeVisual += (brakeRawVisual - car._v15BrakeVisual) * brakeVisualBlend;
+  const brakeVisual = clamp(car._v15BrakeVisual, 0, 1);
   const yawRate = Number(r.yawR) || 0;
   const curvature = Number.isFinite(r.i) ? (KS[r.i] || 0) : 0;
   const lateralG = clamp(yawRate ? yawRate * (r.vf || r.v || 0) / 9.81 : speed * speed * curvature / 9.81, -2.4, 2.4);
@@ -3663,11 +3799,11 @@ function updateCarRide(car, r, dt, throttle, brake, steer) {
     // Só as rodas do lado que toca a zebra recebem o impacto visual.
     const kerbSide = Math.sign(r.lat || 0);
     const wheelOnKerb = !!r.kerb && kerbSide !== 0 && Math.sign(w.x) === kerbSide;
-    const kerbBump = wheelOnKerb ? Math.sin(clock * 30 + (w.front ? 0 : 1.1)) * 0.036 : 0;
-    const pitchLoad = w.front ? (brake * 0.030 - throttle * 0.012) : (-brake * 0.014 + throttle * 0.006);
+    const kerbBump = wheelOnKerb ? Math.sin(clock * 30 + (w.front ? 0 : 1.1)) * 0.032 : 0;
+    const pitchLoad = w.front ? (brakeVisual * 0.027 - throttle * 0.012) : (-brakeVisual * 0.012 + throttle * 0.006);
     const rollLoad = -lateralG * Math.sign(w.x) * 0.010;
     const targetY = clamp(0.345 + residual + kerbBump - pitchLoad + rollLoad, 0.18, 0.51);
-    const springK = 74, damperC = 12;
+    const springK = 66, damperC = 10.6;
     // Subpassos mantêm a mola estável quando há queda momentânea de FPS.
     const rideDt = Math.min(Math.max(dt, 0), 1 / 30);
     const rideSteps = Math.max(1, Math.ceil(rideDt / (1 / 120)));
@@ -3696,8 +3832,8 @@ function updateCarRide(car, r, dt, throttle, brake, steer) {
     const heave = ((leftAvg + rightAvg) * 0.5) - 0.345;
     const suspensionRoll = clamp((rightAvg - leftAvg) * 0.58, -0.035, 0.035);
     const suspensionPitch = clamp((rearAvg - frontAvg) * 0.40, -0.035, 0.035);
-    const kerbPulse = r.kerb ? Math.sin(clock * 30) * 0.016 : 0;
-    body.rotation.x = base.rx + clamp((brake || 0) * 0.060 - (throttle || 0) * 0.020 + suspensionPitch, -0.05, 0.085);
+    const kerbPulse = r.kerb ? Math.sin(clock * 30) * 0.013 : 0;
+    body.rotation.x = base.rx + clamp(brakeVisual * 0.052 - (throttle || 0) * 0.020 + suspensionPitch, -0.05, 0.085);
     body.rotation.z = base.rz + clamp(-lateralG * 0.018 + suspensionRoll, -0.065, 0.065);
     body.position.set(base.x, base.y + heave * 0.55 + kerbPulse, base.z);
   }
@@ -7846,6 +7982,48 @@ const _cv = new THREE.Vector3(); let _crewF = 0;
     get canvas() { return fx; }
   };
   console.info('[Apex Rush V14] Telemetria dinâmica e feedback visual inicializados.');
+})();
+
+
+
+/* ================================================================
+   APEX RUSH V15 — FOCUS HUD + PROGRESSIVE VISUAL BRAKE RESPONSE
+   Apenas organização visual e suavização dos movimentos da carroceria.
+   Nenhuma força, input, desaceleração, aderência ou IA é modificada.
+   ================================================================ */
+(function initApexRushV15() {
+  if (window.__apxV15Installed) return;
+  window.__apxV15Installed = true;
+  const hud = document.getElementById('hud');
+  if (hud && !document.getElementById('apxV15DetailsBtn')) {
+    const btn = document.createElement('button');
+    btn.id = 'apxV15DetailsBtn';
+    btn.type = 'button';
+    btn.textContent = 'DADOS';
+    btn.setAttribute('aria-label', 'Mostrar ou ocultar painéis de dados');
+    btn.setAttribute('aria-pressed', 'false');
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const enabled = document.body.classList.toggle('apxV15Details');
+      btn.setAttribute('aria-pressed', String(enabled));
+      btn.textContent = enabled ? 'MENOS' : 'DADOS';
+    });
+    hud.appendChild(btn);
+  }
+  // A versão sempre inicia no modo limpo, sem depender de preferências antigas.
+  document.body.classList.remove('apxV15Details');
+  window.__APEX_RUSH_VERSION__ = 'V15';
+  window.__apxV15HUD = {
+    get detailsOpen() { return document.body.classList.contains('apxV15Details'); },
+    toggle() {
+      const enabled = document.body.classList.toggle('apxV15Details');
+      const btn = document.getElementById('apxV15DetailsBtn');
+      if (btn) { btn.setAttribute('aria-pressed', String(enabled)); btn.textContent = enabled ? 'MENOS' : 'DADOS'; }
+      return enabled;
+    }
+  };
+  console.info('[Apex Rush V15] HUD Focus e resposta visual progressiva inicializados.');
 })();
 
 /*<END>*/
