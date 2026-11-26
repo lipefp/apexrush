@@ -25,6 +25,10 @@ python3 -m http.server 8080
 
 Abra `http://localhost:8080` no navegador.
 
+## Auditoria técnica
+
+A revisão estática da V20 e a conferência independente dos pontos críticos estão em [`docs/AUDITORIA_V20.md`](docs/AUDITORIA_V20.md) e [`docs/REVISAO_INDEPENDENTE_V20.md`](docs/REVISAO_INDEPENDENTE_V20.md). Os bugs P0 de remapeamento e captura de tecla devem ser resolvidos antes de uma release estável.
+
 ## Diagnóstico
 
 Na V20, o monitor técnico pode ser aberto com `F10` durante a execução. Ele é útil para registrar FPS, tempos de frame, contadores de renderização, estado do áudio/modelos e erros observados pelo jogo.

@@ -1,3 +1,12 @@
+## V21 — correções orientadas pela auditoria V20
+
+- [ ] P0: ligar o remapeamento ao caminho real de teclado e aos comandos do volante.
+- [ ] P0: impedir atalhos globais durante a captura de teclas.
+- [ ] P1: corrigir a instrução do pit stop para o limite real de 80 km/h e parada quase completa.
+- [ ] P1: adicionar fallback para erro do menu dinâmico após boot.
+- [ ] P2: reproduzir tunneling em colisão com FPS baixo antes de alterar a física.
+- [ ] P2: consolidar as camadas CSS da HUD com testes de regressão.
+
 # Roadmap do Apex Rush
 
 ## Fase A — Estabilização funcional

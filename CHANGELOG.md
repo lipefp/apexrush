@@ -23,3 +23,12 @@ O histórico completo dos snapshots disponíveis está em [`docs/VERSION_HISTORY
 - Added a guarded GitHub import script that checks the remote main SHA before updating it.
 - Added instructions to publish the reconstructed history, `develop` branch, and version tags.
 - Added a GitHub Actions workflow for inline JavaScript syntax validation.
+
+## Auditoria V20 (26/11/2026)
+
+- Arquivada a auditoria técnica fornecida e adicionada uma revisão independente sobre o HTML completo.
+- Confirmados como P0: remapeamento desconectado do mapa de entrada e conflito da tecla `R` durante a captura.
+- Confirmada instrução incompleta do pit stop: limite de pitlane de 80 km/h e parada quase completa (`v < 3 m/s`) na zona de troca.
+- Colisão sem swept test registrada como risco a reproduzir antes de qualquer ajuste físico.
+- Persistência de `perfScale` entre reinícios documentada como decisão de produto, não como defeito automático.
+- Menu dinâmico sem fallback pós-boot registrado como risco de robustez.
