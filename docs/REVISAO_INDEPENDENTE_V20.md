@@ -6,7 +6,7 @@
 
 ## Resultado executivo
 
-A auditoria fornecida é consistente com o código completo nos principais achados. Dois itens são bugs confirmados no fluxo atual (remapeamento e captura de `R`); o texto do box é objetivamente incompleto; a ausência de colisão varrida é confirmada, mas tunneling ainda precisa ser reproduzido; a persistência de `perfScale` entre corridas existe, mas pode ser uma decisão intencional de Auto FPS. O risco do menu dinâmico é válido e merece fallback próprio.
+A auditoria da V20 é consistente com o código completo nos principais achados. Dois itens são bugs confirmados no fluxo atual (remapeamento e captura de `R`); o texto do box é objetivamente incompleto; a ausência de colisão varrida é confirmada, mas tunneling ainda precisa ser reproduzido; a persistência de `perfScale` entre corridas existe, mas pode ser uma decisão intencional de Auto FPS. O risco do menu dinâmico é válido e merece fallback próprio.
 
 ## Conferência item a item
 

@@ -1,8 +1,8 @@
 # Histórico de versões arquivadas
 
-Este repositório contém snapshots HTML reais recuperados dos artefatos desta conversa. Cada tag aponta para o `index.html` correspondente àquela versão. O histórico disponível começa na V8; fontes anteriores não estavam disponíveis no conjunto de arquivos recuperado.
+Este repositório contém os arquivos HTML reais de cada versão. Cada tag aponta para o `index.html` correspondente àquela versão. O histórico começa na V8; as versões anteriores não foram preservadas.
 
-| Tag | Marco registrado na entrega |
+| Tag | O que mudou |
 |---|---|
 | `v8.0.0` | Base de largada/RPM usada como ponto de partida do ciclo recuperado |
 | `v9.0.0` | Refinamento dos modelos 3D |
@@ -19,7 +19,7 @@ Este repositório contém snapshots HTML reais recuperados dos artefatos desta c
 | `v19.0.0` | Otimizações de renderização e Auto FPS |
 | `v20.0.0` | Monitor de diagnóstico, estado de áudio e carregamento de modelos |
 
-As descrições são resumos dos marcos de entrega. Para verificar uma implementação, compare o código de duas tags. A V11.0.0 está arquivada como snapshot histórico; a V11.1.0 é o hotfix posterior.
+As descrições resumem cada versão. Para verificar uma implementação, compare o código de duas tags. A V11.0.0 está arquivada como snapshot histórico; a V11.1.0 é o hotfix posterior.
 
 ## Como abrir uma versão específica
 
