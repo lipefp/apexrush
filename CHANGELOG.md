@@ -17,3 +17,9 @@ O histórico completo dos snapshots disponíveis está em [`docs/VERSION_HISTORY
 ### Observações
 - A validação estática não certifica FPS real nem funcionamento em todos os navegadores/GPU.
 - A V20 é baseline de desenvolvimento, não release final de produção.
+
+## Repository bootstrap (26 Nov 2026)
+
+- Added a guarded GitHub import script that checks the remote main SHA before updating it.
+- Added instructions to publish the reconstructed history, `develop` branch, and version tags.
+- Added a GitHub Actions workflow for inline JavaScript syntax validation.
