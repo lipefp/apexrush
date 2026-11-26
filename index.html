@@ -7671,6 +7671,183 @@ const _cv = new THREE.Vector3(); let _crewF = 0;
   console.info('[Apex Rush V13] Spray de pneus e brilho térmico dos freios inicializados.');
 })();
 
+
+/* ================================================================
+   APEX RUSH V14 — LIVE DRIVING DYNAMICS TELEMETRY
+   Instrumentação e feedback estritamente visuais. Não escreve na
+   simulação, não muda inputs, forças, aderência, freios ou IA.
+   ================================================================ */
+(function initApexRushV14Telemetry() {
+  if (window.__apxV14Installed) return;
+  window.__apxV14Installed = true;
+
+  const style = document.createElement('style');
+  style.id = 'apxV14TelemetryStyle';
+  style.textContent = `
+    #apxV14Panel{position:fixed;left:50%;top:clamp(72px,10vh,92px);transform:translateX(-50%);z-index:6;
+      width:min(310px,calc(100vw - 20px));padding:9px 11px 8px;border:1px solid rgba(180,195,225,.16);
+      border-radius:10px;background:rgba(9,12,20,.62);backdrop-filter:blur(11px) saturate(1.18);
+      -webkit-backdrop-filter:blur(11px) saturate(1.18);color:#edf2ff;pointer-events:none;
+      box-shadow:0 8px 24px rgba(0,0,0,.16);font:600 10px/1.25 Inter,system-ui,sans-serif;
+      letter-spacing:.06em;opacity:0;visibility:hidden;transition:opacity .18s ease,visibility .18s ease}
+    #apxV14Panel.live{opacity:1;visibility:visible}
+    #apxV14Panel .v14Head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;color:#aeb9d0;font-size:9px;letter-spacing:.15em}
+    #apxV14Panel .v14Live{color:#7ce6c2;display:flex;align-items:center;gap:5px}
+    #apxV14Panel .v14Dot{width:5px;height:5px;border-radius:50%;background:#52ddb0;box-shadow:0 0 7px #52ddb0}
+    #apxV14Panel .v14Metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:7px}
+    #apxV14Panel .v14Metric{min-width:0;padding:5px 7px;border-radius:6px;background:rgba(255,255,255,.045)}
+    #apxV14Panel .v14Value{font:800 20px/1.05 Inter,system-ui,sans-serif;letter-spacing:-.035em;font-variant-numeric:tabular-nums;white-space:nowrap}
+    #apxV14Panel .v14Unit{font-size:9px;color:#9ba8bf;margin-left:3px}
+    #apxV14Panel .v14Label{font-size:8px;color:#8794aa;letter-spacing:.12em;margin-top:3px}
+    #apxV14Panel .v14LoadHead{display:flex;justify-content:space-between;gap:8px;color:#aab6ca;font-size:8px;letter-spacing:.1em;margin-bottom:4px}
+    #apxV14Panel .v14LoadTrack{height:4px;background:rgba(255,255,255,.10);border-radius:5px;overflow:hidden}
+    #apxV14Panel .v14LoadFill{height:100%;width:0%;border-radius:5px;background:#62d9e9;transition:width .09s linear,background .12s linear}
+    #apxV14Panel .v14Pedals{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:7px}
+    #apxV14Panel .v14PedalHead{display:flex;justify-content:space-between;color:#8996ac;font-size:8px;margin-bottom:3px}
+    #apxV14Panel .v14PedalTrack{height:3px;border-radius:4px;background:rgba(255,255,255,.09);overflow:hidden}
+    #apxV14Panel .v14PedalFill{height:100%;width:0%;border-radius:4px;transition:width .08s linear}
+    #apxV14Panel .v14Temps{display:flex;justify-content:space-between;gap:8px;margin-top:7px;padding-top:6px;
+      border-top:1px solid rgba(255,255,255,.08);font-size:8px;color:#8794aa;font-variant-numeric:tabular-nums}
+    #apxV14Panel .v14Temps b{font-size:9px;color:#dbe3f2;font-weight:700}
+    @media(max-width:600px){#apxV14Panel{top:76px;width:min(286px,calc(100vw - 16px));padding:7px 9px}
+      #apxV14Panel .v14Value{font-size:18px}#apxV14Panel .v14Metric{padding:4px 6px}}
+    @media(prefers-reduced-motion:reduce){#apxV14Panel,#apxV14Panel *{transition:none!important}}
+  `;
+  document.head.appendChild(style);
+
+  const panel = document.createElement('div');
+  panel.id = 'apxV14Panel';
+  panel.setAttribute('aria-hidden', 'true');
+  panel.innerHTML = `
+    <div class="v14Head"><span>APEX · TELEMETRIA DINÂMICA</span><span class="v14Live"><i class="v14Dot"></i> LIVE</span></div>
+    <div class="v14Metrics">
+      <div class="v14Metric"><div><span class="v14Value" data-v14="lat">+0.0</span><span class="v14Unit">G</span></div><div class="v14Label">CARGA LATERAL</div></div>
+      <div class="v14Metric"><div><span class="v14Value" data-v14="slip">0.0</span><span class="v14Unit">°</span></div><div class="v14Label">ÂNGULO DE DERIVA</div></div>
+    </div>
+    <div class="v14LoadHead"><span>CARGA DINÂMICA</span><span data-v14="state">ESTÁVEL</span></div>
+    <div class="v14LoadTrack"><div class="v14LoadFill" data-v14="load"></div></div>
+    <div class="v14Pedals">
+      <div><div class="v14PedalHead"><span>ACELERADOR</span><b data-v14="gasText">0%</b></div><div class="v14PedalTrack"><div class="v14PedalFill" data-v14="gas" style="background:#55d99b"></div></div></div>
+      <div><div class="v14PedalHead"><span>FREIO</span><b data-v14="brakeText">0%</b></div><div class="v14PedalTrack"><div class="v14PedalFill" data-v14="brake" style="background:#ff716b"></div></div></div>
+    </div>
+    <div class="v14Temps"><span>FREIOS <b data-v14="brakeTemp">0°C</b></span><span>PNEUS <b data-v14="tyreTemp">0°C</b></span></div>
+  `;
+  document.body.appendChild(panel);
+  const el = key => panel.querySelector(`[data-v14="${key}"]`);
+
+  // Vinheta lateral muito discreta: reforça a direção da carga sem cobrir o centro.
+  const fx = document.createElement('canvas');
+  fx.id = 'apxV14LoadFx';
+  fx.setAttribute('aria-hidden', 'true');
+  fx.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:3;pointer-events:none;';
+  document.body.appendChild(fx);
+  const ctx = fx.getContext('2d', { alpha: true });
+  let w = 1, h = 1, dpr = 1;
+  function resize() {
+    w = Math.max(1, window.innerWidth || 1);
+    h = Math.max(1, window.innerHeight || 1);
+    dpr = Math.min(window.devicePixelRatio || 1, quality ? 1.2 : 1);
+    fx.width = Math.round(w * dpr);
+    fx.height = Math.round(h * dpr);
+    if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize, { passive: true });
+  resize();
+
+  let filteredLoad = 0;
+  function updateV14(dt) {
+    const active = state === ST.PLAYING && started && !document.hidden;
+    if (!active) {
+      panel.classList.remove('live');
+      if (ctx) ctx.clearRect(0, 0, w, h);
+      filteredLoad = 0;
+      return;
+    }
+    panel.classList.add('live');
+
+    const vf = Number(player.vf) || 0;
+    const vl = Number(player.vl) || 0;
+    const yawRate = Number(player.yawR) || 0;
+    // Mesma relação cinemática já usada pela suspensão visual do jogo.
+    const lateralG = clamp(yawRate * vf / 9.81, -2.4, 2.4);
+    const slipDeg = Math.atan2(Math.abs(vl), Math.max(Math.abs(vf), 4)) * 180 / Math.PI;
+    const rawLoad = clamp(Math.max(Math.abs(lateralG) / 2.4, slipDeg / 18), 0, 1);
+    const blend = 1 - Math.exp(-Math.max(0, dt) * 7.5);
+    filteredLoad += (rawLoad - filteredLoad) * blend;
+
+    const gasRaw = Number(player._throttleFiltered);
+    const brakeRaw = Number(player._brakeFiltered);
+    const gas = clamp(Number.isFinite(gasRaw) ? gasRaw : (Number(inputGas) || 0), 0, 1);
+    const brake = clamp(Number.isFinite(brakeRaw) ? brakeRaw : (Number(inputBrake) || 0), 0, 1);
+    const loadPct = Math.round(filteredLoad * 100);
+    const status = player.kerb ? 'ZEBRA' : filteredLoad > 0.82 ? 'CARGA ALTA' : slipDeg > 9 ? 'DERIVA' : filteredLoad > 0.55 ? 'ATENÇÃO' : 'ESTÁVEL';
+    const loadColor = filteredLoad > 0.82 ? '#ff716b' : filteredLoad > 0.55 ? '#ffd166' : '#62d9e9';
+    el('lat').textContent = `${lateralG >= 0 ? '+' : ''}${lateralG.toFixed(1)}`;
+    el('slip').textContent = slipDeg.toFixed(1);
+    el('state').textContent = status;
+    el('state').style.color = loadColor;
+    el('load').style.width = `${loadPct}%`;
+    el('load').style.background = loadColor;
+    el('gas').style.width = `${Math.round(gas * 100)}%`;
+    el('brake').style.width = `${Math.round(brake * 100)}%`;
+    el('gasText').textContent = `${Math.round(gas * 100)}%`;
+    el('brakeText').textContent = `${Math.round(brake * 100)}%`;
+    const bt = Math.max(0, Number(brakeTemp) || 0);
+    const tyres = Array.isArray(tireTemp4) ? tireTemp4.filter(Number.isFinite) : [];
+    const tyreAvg = tyres.length ? tyres.reduce((sum, x) => sum + x, 0) / tyres.length : (Number(player.tyreTemp) || 0) * 100;
+    el('brakeTemp').textContent = `${Math.round(bt)}°C`;
+    el('tyreTemp').textContent = `${Math.round(Math.max(0, tyreAvg))}°C`;
+
+    // Feedback de carga nas bordas, com intensidade limitada e sem blur pesado.
+    if (ctx) {
+      ctx.clearRect(0, 0, w, h);
+      const speed = Math.hypot(Number(player.vx) || 0, Number(player.vz) || 0);
+      if (speed > 18 && filteredLoad > 0.28) {
+        const side = lateralG >= 0 ? 1 : -1;
+        const x = side > 0 ? w : 0;
+        const alpha = Math.min(0.075, (filteredLoad - 0.25) * 0.095);
+        const radius = Math.max(150, w * 0.34);
+        const grad = ctx.createRadialGradient(x, h * 0.52, 0, x, h * 0.52, radius);
+        grad.addColorStop(0, `rgba(255,190,105,${alpha})`);
+        grad.addColorStop(1, 'rgba(255,190,105,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+      }
+      if (brake > 0.72 && speed > 25) {
+        const alpha = Math.min(0.035, (brake - 0.65) * 0.08);
+        const grad = ctx.createLinearGradient(0, h, 0, h * 0.72);
+        grad.addColorStop(0, `rgba(255,75,70,${alpha})`);
+        grad.addColorStop(1, 'rgba(255,75,70,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, h * 0.72, w, h * 0.28);
+      }
+    }
+  }
+
+  const previousExtras = _extrasFrameFn;
+  _extrasFrameFn = function apxV14Frame(dt) {
+    try { if (previousExtras) previousExtras(dt); }
+    finally {
+      try { updateV14(dt); }
+      catch (err) {
+        if (!window.__apxV14Warned) {
+          window.__apxV14Warned = true;
+          console.warn('[Apex Rush V14] telemetria visual desativada após falha:', err);
+          panel.classList.remove('live');
+        }
+      }
+    }
+  };
+
+  window.__APEX_RUSH_VERSION__ = 'V14';
+  window.__apxV14Telemetry = {
+    get active() { return panel.classList.contains('live'); },
+    get load() { return filteredLoad; },
+    get canvas() { return fx; }
+  };
+  console.info('[Apex Rush V14] Telemetria dinâmica e feedback visual inicializados.');
+})();
+
 /*<END>*/
 </script>
 <div id="apxLoad" style="position:fixed;inset:0;z-index:9999;background:#0d0f16;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px;box-sizing:border-box;font-family:inherit;color:#e9ecf3;transition:opacity .45s">
