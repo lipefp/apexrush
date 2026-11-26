@@ -4743,7 +4743,7 @@ function wheelRig() {
   const b = new T.Box3().setFromObject(inner), c = b.getCenter(new T.Vector3());
   const wrap = new T.Group(); wrap.scale.setScalar(0.34 / Math.max(0.001, b.max.x - b.min.x));
   inner.position.set(-c.x, -c.y, -c.z); wrap.add(inner); face.add(wrap);
-  const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 540;
+  const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 614;
   const tex = new T.CanvasTexture(cv); tex.colorSpace = T.SRGBColorSpace; tex.anisotropy = 8;
   // Painel digital aplicado sobre a área LCD real do GLB, sem deformar o aro ou cobrir a moldura.
   // O asset original tem a tela centrada em y≈0.378; o fallback antigo usa o posicionamento legado.
@@ -5128,9 +5128,9 @@ function makeApexCarGroup() {
   const bg = new T.ExtrudeGeometry(sh, { depth: .035, bevelEnabled: true, bevelSize: .006, bevelThickness: .006, bevelSegments: 2 }); bg.translate(0, 0, -.0175);
   fl.add(new T.Mesh(bg, wcarb));
   const col = new T.Mesh(new T.CylinderGeometry(.018, .018, .35, 12).rotateX(Math.PI / 2), wcarb); col.position.z = -.2; fl.add(col);
-  const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 540;
+  const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 614;
   const tex = new T.CanvasTexture(cv); tex.colorSpace = T.SRGBColorSpace; tex.anisotropy = 8;
-  const face = new T.Mesh(new T.PlaneGeometry(.36, .19), new T.MeshBasicMaterial({ map: tex, toneMapped: false })); face.position.z = .0235; fl.add(face);
+  const face = new T.Mesh(new T.PlaneGeometry(.36, .216), new T.MeshBasicMaterial({ map: tex, toneMapped: false })); face.position.z = .0235; fl.add(face);
   const leds = [];
   for (let i = 0; i < 10; i++) { const b = new T.Mesh(new T.BoxGeometry(.015, .007, .004), new T.MeshBasicMaterial({ color: '#292b31', toneMapped: false })); b.position.set(-.09 + i * .02, .081, .026); fl.add(b); leds.push(b); }
   [-1, 1].forEach(s => {
@@ -5160,33 +5160,153 @@ function prepApexModel(g) {
 }
 // Tela do volante com os mesmos dados do HUD (posição, volta, tempo, marcha, velocidade, ERS, pneu, DRS)
 function drawApexScreen(car) {
-  const a = car.screenCtx ? { ctx: car.screenCtx, tex: car.screenTex } : null; if (!a) return;
-  const x = a.ctx, W = 1024, H = 540, tyre = TYRE[player.comp];
-  const st = standings(), pos = player.finished ? finalPos : st.indexOf(player) + 1, gi = gearInfo();
-  const spd = Math.round(Math.hypot(player.vx, player.vz) * 3.6), ers = Math.round(player.ers * 100);
-  const tx = (s, px, py, f, c, al) => { x.font = f; x.fillStyle = c; x.textAlign = al || 'left'; x.fillText(s, px, py); };
-  const rr = (p, q, c, d, r) => { x.beginPath(); x.moveTo(p + r, q); x.arcTo(p + c, q, p + c, q + d, r); x.arcTo(p + c, q + d, p, q + d, r); x.arcTo(p, q + d, p, q, r); x.arcTo(p, q, p + c, q, r); x.closePath(); };
-  x.fillStyle = '#05060a'; x.fillRect(0, 0, W, H);
-  // LEDs de troca de marcha
-  const ledN = Math.round(gi.fr * 12);
-  for (let k = 0; k < 12; k++) { const col = k < 4 ? '#2fe36b' : k < 8 ? '#ff3b30' : '#4aa3ff';
-    x.beginPath(); x.arc(250 + k * 48, 46, 17, 0, 7); x.fillStyle = k < ledN ? col : '#1d1f26'; x.fill(); }
-  tx(String(gi.g), 512, 330, '800 250px Inter,sans-serif', '#ffffff', 'center');
-  tx(String(spd), 330, 250, '800 110px Inter,sans-serif', '#ffffff', 'right'); tx('KM/H', 330, 292, '700 30px Inter,sans-serif', '#9fa3b8', 'right');
-  tx('P' + pos, 694, 196, '800 92px Inter,sans-serif', '#d2cefd');
-  tx('V ' + clamp(player.lap, 1, LAPS) + '/' + LAPS, 694, 250, '700 40px Inter,sans-serif', '#e9e9ed');
-  tx(fmtTime(raceTime), 694, 296, '700 36px Inter,sans-serif', '#b2b6ca');
-  // ERS e pneu embaixo
-  x.fillStyle = '#23252d'; x.fillRect(250, 400, 524, 30); x.fillStyle = ers > 25 ? '#ffd21a' : '#ff3b30'; x.fillRect(250, 400, 524 * ers / 100, 30);
-  tx('ERS ' + ers + '%', 250, 470, '800 40px Inter,sans-serif', '#ffffff');
-  x.beginPath(); x.arc(560, 456, 16, 0, 7); x.fillStyle = tyre.col; x.fill();
-  tx(Math.round((1 - player.wear) * 100) + '%', 774, 470, '800 40px Inter,sans-serif', '#ffffff', 'right');
-  if (player.drs) { rr(430, 352, 164, 40, 10); x.fillStyle = '#2fe36b'; x.fill(); tx('DRS', 512, 384, '800 34px Inter,sans-serif', '#05060a', 'center'); }
-  const L = [['DRS', player.drs], ['BOOST', wheelSt.boost || !!player.boost], ['ABS', wheelSt.abs], ['TC', wheelSt.tc]], R = [['MIX ' + engineMap, engineMap === 3], ['PNEU', wheelSt.tyreT > clock], ['RÁDIO', wheelSt.radioT > clock], ['BOX', wheelSt.box]];
-  [[L, 110, 'left', 164], [R, 914, 'right', 860]].forEach(([arr, cx, al, lx]) => arr.forEach(([n, on], i) => {
-    const cy = 120 + i * 90; x.beginPath(); x.arc(cx, cy, 30, 0, 7); x.fillStyle = on ? '#9184d9' : '#292b31'; x.fill(); x.lineWidth = 3; x.strokeStyle = on ? '#d2cefd' : '#595d6c'; x.stroke();
-    tx(n, cx, cy + 62, '700 20px Inter,sans-serif', on ? '#d2cefd' : '#7c8094', 'center');
-  }));
+  const a = car && car.screenCtx ? { ctx: car.screenCtx, tex: car.screenTex } : null;
+  if (!a || !a.ctx || !a.tex) return;
+
+  // Dashboard layout is authored at the same 5:3 aspect ratio as the physical LCD.
+  const x = a.ctx, W = 1024, H = 614;
+  const gi = gearInfo();
+  const st = standings();
+  const pos = player.finished ? finalPos : Math.max(1, st.indexOf(player) + 1);
+  const speed = Math.round(Math.hypot(player.vx || 0, player.vz || 0) * 3.6);
+  const ers = clamp(Math.round((Number(player.ers) || 0) * 100), 0, 100);
+  const wear = clamp(Math.round((1 - (Number(player.wear) || 0)) * 100), 0, 100);
+  const tyre = TYRE[player.comp] || TYRE[1];
+  const brake = clamp(Math.round(Number(brakeTemp) || 0), 0, 1000);
+  const bias = clamp(Math.round(Number(brakeBias) || 56), 45, 60);
+  const mapName = ['ECO', 'STD', 'PUSH'][clamp((Number(engineMap) || 1) - 1, 0, 2)];
+  const tyreTemps = Array.isArray(tireTemp4) ? tireTemp4 : [];
+  const tyreTemp = tyreTemps.length
+    ? Math.round(tyreTemps.reduce((sum, value) => sum + (Number(value) || 0), 0) / tyreTemps.length)
+    : Math.round((Number(player.tyreTemp) || 0) * 100);
+  const lapText = `${clamp(player.lap || 1, 1, LAPS)}/${LAPS}`;
+  const timeText = fmtTime(raceTime);
+
+  const roundBox = (px, py, pw, ph, radius, fill, stroke) => {
+    x.beginPath();
+    if (typeof x.roundRect === 'function') x.roundRect(px, py, pw, ph, radius);
+    else x.rect(px, py, pw, ph);
+    if (fill) { x.fillStyle = fill; x.fill(); }
+    if (stroke) { x.strokeStyle = stroke; x.lineWidth = 1.5; x.stroke(); }
+  };
+  const text = (value, px, py, size, color, align = 'left', weight = 700, maxWidth) => {
+    x.font = `${weight} ${size}px Inter, Arial, sans-serif`;
+    x.fillStyle = color;
+    x.textAlign = align;
+    x.textBaseline = 'middle';
+    if (maxWidth) x.fillText(String(value), px, py, maxWidth);
+    else x.fillText(String(value), px, py);
+  };
+  const smallLabel = (value, px, py, align = 'left') => {
+    text(value, px, py, 15, '#8994aa', align, 800);
+  };
+  const meter = (px, py, pw, value, color, track = '#202633') => {
+    roundBox(px, py, pw, 13, 6, track);
+    const width = Math.max(0, Math.min(pw, pw * value / 100));
+    if (width > 1) roundBox(px, py, width, 13, 6, color);
+  };
+  const card = (px, py, pw, title, value, color = '#e9edf7') => {
+    roundBox(px, py, pw, 64, 9, '#111722', '#283142');
+    text(title, px + 12, py + 18, 11, '#77849a', 'left', 800);
+    text(value, px + 12, py + 43, 19, color, 'left', 800, pw - 22);
+  };
+
+  x.save();
+  x.clearRect(0, 0, W, H);
+  const bg = x.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, '#070a12');
+  bg.addColorStop(.55, '#0c111c');
+  bg.addColorStop(1, '#080b13');
+  x.fillStyle = bg; x.fillRect(0, 0, W, H);
+  roundBox(7, 7, W - 14, H - 14, 20, null, '#263044');
+  x.fillStyle = '#9184d9'; x.fillRect(26, 27, 4, 40);
+
+  // Cabeçalho curto para identificar a tela sem roubar espaço dos dados de pilotagem.
+  text('APEX RUSH', 45, 39, 20, '#eef1fa', 'left', 900);
+  text('DRIVER DISPLAY  /  LIVE TELEMETRY', 45, 62, 10, '#76839a', 'left', 700);
+  roundBox(850, 28, 138, 34, 9, '#131b28', '#303b50');
+  x.beginPath(); x.arc(869, 45, 5, 0, Math.PI * 2); x.fillStyle = started ? '#36df8a' : '#8a93a5'; x.fill();
+  text(started ? 'RACE LIVE' : 'STANDBY', 883, 45, 12, started ? '#a8f5cb' : '#aab3c3', 'left', 800);
+
+  // Barra de RPM: progressão verde, âmbar e vermelha, ligada ao giro já calculado pelo jogo.
+  const rpmStart = 323, rpmY = 83, rpmW = 27, rpmGap = 7;
+  const rpmCount = 12, lit = clamp(Math.round((Number(gi.fr) || 0) * rpmCount), 0, rpmCount);
+  text('RPM', 269, rpmY + 7, 11, '#65728a', 'right', 800);
+  for (let i = 0; i < rpmCount; i++) {
+    const col = i < 5 ? '#32d879' : i < 9 ? '#ffc44f' : '#ff554e';
+    roundBox(rpmStart + i * (rpmW + rpmGap), rpmY, rpmW, 14, 4,
+      i < lit ? col : '#202633', i < lit ? col : '#2c3443');
+  }
+  text(lit >= 11 ? 'SHIFT' : 'GEAR LOAD', 755, rpmY + 7, 10, lit >= 11 ? '#ff766f' : '#65728a', 'left', 800);
+
+  // Núcleo de leitura: velocidade, marcha e situação de corrida em blocos separados.
+  roundBox(224, 115, 224, 202, 14, '#101722', '#293448');
+  roundBox(457, 115, 110, 202, 14, '#17162a', '#4a426f');
+  roundBox(576, 115, 224, 202, 14, '#101722', '#293448');
+
+  smallLabel('VELOCIDADE', 246, 145);
+  text(speed, 336, 223, speed >= 1000 ? 76 : 94, '#ffffff', 'center', 900, 182);
+  text('KM/H', 336, 278, 17, '#8e9bb1', 'center', 800);
+  x.fillStyle = '#9184d9'; x.fillRect(246, 297, 180, 3);
+
+  smallLabel('MARCHA', 512, 145, 'center');
+  text(gi.g, 512, 226, 112, '#ffffff', 'center', 900, 100);
+  text('GEAR', 512, 280, 13, '#aaa2df', 'center', 800);
+
+  smallLabel('POSIÇÃO', 600, 145);
+  text(`P${pos}`, 600, 193, 52, '#d8d0ff', 'left', 900);
+  x.fillStyle = '#30384a'; x.fillRect(600, 220, 176, 1);
+  text('VOLTA', 600, 244, 11, '#77849a', 'left', 800);
+  text(lapText, 776, 244, 20, '#eef1fa', 'right', 800);
+  text('TEMPO', 600, 282, 11, '#77849a', 'left', 800);
+  text(timeText, 776, 282, 18, '#d8dfeb', 'right', 800);
+
+  // Dados úteis de stint organizados em duas barras de leitura rápida.
+  roundBox(224, 328, 576, 263, 14, '#0e1520', '#293448');
+  text('ENERGIA  /  ERS', 248, 362, 13, '#a5b0c4', 'left', 800);
+  text(`${ers}%`, 776, 362, 18, ers > 25 ? '#f4d36f' : '#ff7770', 'right', 900);
+  meter(248, 382, 528, ers, ers > 25 ? '#e6bd4c' : '#f05c58', '#252e3d');
+
+  text(`PNEU  /  ${tyre.l}`, 248, 435, 13, '#a5b0c4', 'left', 800);
+  const wearColor = wear > 60 ? '#36d98b' : wear > 30 ? '#e8c65b' : '#f0645d';
+  text(`${wear}%`, 776, 435, 18, wearColor, 'right', 900);
+  meter(248, 455, 528, wear, wearColor, '#252e3d');
+
+  const brakeColor = brake > 720 ? '#ff6a62' : brake > 450 ? '#f0c36b' : '#d7dfef';
+  const tyreColor = tyreTemp > 95 ? '#ff806e' : tyreTemp > 75 ? '#f0c36b' : '#d7dfef';
+  card(248, 492, 126, 'FREIOS', `${brake}°C`, brakeColor);
+  card(384, 492, 126, 'PNEU TEMP.', `${tyreTemp}°C`, tyreColor);
+  card(520, 492, 116, 'BRAKE BIAS', `${bias}%`);
+  card(646, 492, 130, 'MOTOR MAP', mapName, engineMap === 3 ? '#f0ca69' : '#d7dfef');
+
+  // Botões laterais com áreas clicáveis preservadas, agora em módulos compactos e legíveis.
+  const leftButtons = [
+    ['DRS', !!player.drs, player.drs ? 'OPEN' : (player.drsZone && player.drsElig ? 'READY' : 'CLOSED'), '#39dc83'],
+    ['BOOST', !!(wheelSt.boost || player.boost), wheelSt.boost || player.boost ? 'ACTIVE' : 'READY', '#a99af5'],
+    ['ABS', !!wheelSt.abs, wheelSt.abs ? 'ON' : 'OFF', '#71baff'],
+    ['TC', !!wheelSt.tc, wheelSt.tc ? 'ON' : 'OFF', '#71baff']
+  ];
+  const rightButtons = [
+    ['MIX', engineMap === 3, mapName, '#eac46b'],
+    ['PNEU', wheelSt.tyreT > clock, tyre.l.toUpperCase(), tyre.col || '#d7dfef'],
+    ['RÁDIO', wheelSt.radioT > clock, wheelSt.radioT > clock ? 'ACTIVE' : 'READY', '#78c9ef'],
+    ['BOX', !!wheelSt.box, wheelSt.box ? 'REQUEST' : 'STANDBY', '#eac46b']
+  ];
+  const drawSideButton = (cx, cy, item) => {
+    const [name, on, stateText, accent] = item;
+    roundBox(cx - 43, cy - 31, 86, 62, 12,
+      on ? 'rgba(75,65,119,.65)' : '#111722',
+      on ? accent : '#30394a');
+    x.beginPath(); x.arc(cx - 27, cy, 4, 0, Math.PI * 2);
+    x.fillStyle = on ? accent : '#596477'; x.fill();
+    text(name, cx + 4, cy - 5, 14, on ? '#f4f2ff' : '#b8c2d4', 'center', 900, 62);
+    text(stateText, cx, cy + 17, 9, on ? accent : '#718098', 'center', 800, 76);
+  };
+  const ys = [130, 245, 360, 475];
+  leftButtons.forEach((b, i) => drawSideButton(110, ys[i], b));
+  rightButtons.forEach((b, i) => drawSideButton(914, ys[i], b));
+
+  x.restore();
   a.tex.needsUpdate = true;
 }
 function apexTpl() { return apexTemplate || (apexTemplate = prepApexModel(makeApexCarGroup())); }
@@ -5340,7 +5460,7 @@ function attachPlayerModel(model) {
     car.wheel = rig.pivot; car.screenCtx = rig.ctx; car.screenTex = rig.tex;
     if (ap) ap.steer.visible = false;
   } else {
-    car.wheel = ap ? ap.steer : car.procWheel; car.screenCtx = null;
+    car.wheel = ap ? ap.steer : car.procWheel; car.screenCtx = ap ? ap.ctx : null; car.screenTex = ap ? ap.tex : null;
   }
   car.leds = ap ? ap.leds : car.procLeds;
   car.ledN = -1;
@@ -6957,7 +7077,7 @@ window.addEventListener('keydown', e => {
 });
 // clique na tela do volante: raycast no plano do display, uv -> coordenada do canvas
 const _wRay = new THREE.Raycaster(), _wNdc = new THREE.Vector2();
-const WHEEL_BTNS = [['DRS', 110, 120], ['BOOST', 110, 210], ['ABS', 110, 300], ['TC', 110, 390], ['MIX', 914, 120], ['PNEU', 914, 210], ['RÁDIO', 914, 300], ['BOX', 914, 390]];
+const WHEEL_BTNS = [['DRS', 110, 130], ['BOOST', 110, 245], ['ABS', 110, 360], ['TC', 110, 475], ['MIX', 914, 130], ['PNEU', 914, 245], ['RÁDIO', 914, 360], ['BOX', 914, 475]];
 function wheelHit(clientX, clientY) {
   if (camMode !== 2 || state !== ST.PLAYING || !wheelRigObj || !wheelRigObj.scr) return null;
   const r = renderer.domElement.getBoundingClientRect();
@@ -6965,8 +7085,9 @@ function wheelHit(clientX, clientY) {
   _wRay.setFromCamera(_wNdc, camera);
   const hit = _wRay.intersectObject(wheelRigObj.scr, false)[0];
   if (!hit || !hit.uv) return null;
-  const cx = hit.uv.x * 1024, cy = (1 - hit.uv.y) * 540;
-  const b = WHEEL_BTNS.find(([, bx, by]) => Math.hypot(cx - bx, cy - by) < 48);
+  const cx = hit.uv.x * 1024, cy = (1 - hit.uv.y) * 614;
+  // Retângulos com margem curta: os quatro comandos de cada lado não se sobrepõem.
+  const b = WHEEL_BTNS.find(([, bx, by]) => Math.abs(cx - bx) <= 48 && Math.abs(cy - by) <= 45);
   return b ? b[0] : null;
 }
 window.__wheelHit = wheelHit; window.__wheelRig = () => wheelRigObj; window.__wheelSt = wheelSt;
@@ -8404,6 +8525,21 @@ const _cv = new THREE.Vector3(); let _crewF = 0;
   };
   console.info('[Apex Rush V17] Integridade dos materiais de pneu e guarda visual ativos.');
 })();
+
+
+/* ================================================================
+   APEX RUSH V18 — DRIVER DISPLAY / STEERING-WHEEL HUD REWORK
+   Reorganiza a tela do volante, ajusta o aspecto ao LCD físico,
+   mantém coordenadas de interação sincronizadas e ativa o fallback procedural.
+   Sem alterações à física, IA, tempos de corrida ou força de frenagem.
+   ================================================================ */
+window.__APEX_RUSH_VERSION__ = 'V18';
+window.__apxV18WheelDisplay = {
+  get canvasHeight() { return 614; },
+  get buttons() { return WHEEL_BTNS.map(([name, x, y]) => ({ name, x, y })); },
+  redraw() { if (player && player.car && player.car.screenCtx) drawApexScreen(player.car); }
+};
+console.info('[Apex Rush V18] Driver Display do volante redesenhado e sincronizado com as zonas de toque.');
 
 /*<END>*/
 </script>
