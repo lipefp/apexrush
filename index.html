@@ -2308,7 +2308,7 @@ function resetRace() {
 
 // ---------------------------------------------------------------- Áudio procedural (Web Audio)
 const audio = {
-  ctx: null, muted: false, windG: null, rainG: null, master: null, noise: null, o1: null, o2: null, o3: null, filt: null, eng: null, sq: null, rg: null, wg: null,
+  ctx: null, muted: false, sampleState: 'idle', windG: null, rainG: null, master: null, noise: null, o1: null, o2: null, o3: null, filt: null, eng: null, sq: null, rg: null, wg: null,
   init() {
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {}); return; }
     try {
@@ -2349,15 +2349,47 @@ const audio = {
   },
   // Motor e pneu gravados: dois loops de motor (giro baixo ~150 Hz e alto ~215 Hz) com tom e mistura pelo giro; pneu em loop
   async loadSamples() {
+    const c = this.ctx;
+    if (!c) { this.sampleState = 'unavailable'; return; }
+    this.sampleState = 'decoding';
     try {
-      const c = this.ctx, dec = u => { const b = atob(u.split(',')[1]), a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i); return c.decodeAudioData(a.buffer); };
-      const [lo, hi, sq, cheer, crowd, rad] = await Promise.all([dec(SND_ENG_LO), dec(SND_ENG_HI), dec(SND_SQUEAL), dec(SND_CHEER), dec(SND_CROWD), dec(SND_RADIO)]);
-      this.bufCheer = cheer; this.bufRadio = rad;
-      const mk = (buf, g) => { const s = c.createBufferSource(); s.buffer = buf; s.loop = true; const gn = c.createGain(); gn.gain.value = 0; s.connect(gn); gn.connect(g); s.start(); return { s, g: gn }; };
-      const engBus = c.createGain(); engBus.gain.value = 1;
-      const tone = c.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 9000; engBus.connect(tone); tone.connect(this.master);
-      this.samp = { lo: mk(lo, engBus), hi: mk(hi, engBus), sq: mk(sq, this.master), crowd: mk(crowd, this.master), tone };
-    } catch (e) { console.warn('[F1] sons gravados:', e); this.samp = null; }
+      const dec = async u => {
+        const payload = String(u || '').split(',')[1];
+        if (!payload) throw new Error('Amostra de áudio vazia');
+        const b = atob(payload), a = new Uint8Array(b.length);
+        for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
+        return await c.decodeAudioData(a.buffer);
+      };
+      const specs = [
+        ['lo', SND_ENG_LO], ['hi', SND_ENG_HI], ['sq', SND_SQUEAL],
+        ['cheer', SND_CHEER], ['crowd', SND_CROWD], ['radio', SND_RADIO]
+      ];
+      // Cada recurso falha de forma independente: não perdemos o motor se, por exemplo,
+      // apenas o áudio de torcida estiver corrompido ou indisponível.
+      const decoded = await Promise.all(specs.map(async ([key, data]) => {
+        try { return [key, await dec(data), null]; }
+        catch (err) { console.warn('[F1] amostra ' + key + ' indisponível:', err); return [key, null, err]; }
+      }));
+      const buffers = Object.fromEntries(decoded.map(([key, buffer]) => [key, buffer]));
+      this.bufCheer = buffers.cheer || null;
+      this.bufRadio = buffers.radio || null;
+      const required = ['lo', 'hi', 'sq', 'crowd'];
+      if (required.every(key => buffers[key])) {
+        const mk = (buf, g) => { const s = c.createBufferSource(); s.buffer = buf; s.loop = true; const gn = c.createGain(); gn.gain.value = 0; s.connect(gn); gn.connect(g); s.start(); return { s, g: gn }; };
+        const engBus = c.createGain(); engBus.gain.value = 1;
+        const tone = c.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 9000; engBus.connect(tone); tone.connect(this.master);
+        this.samp = { lo: mk(buffers.lo, engBus), hi: mk(buffers.hi, engBus), sq: mk(buffers.sq, this.master), crowd: mk(buffers.crowd, this.master), tone };
+        this.sampleState = decoded.every(([, buffer]) => !!buffer) ? 'ready' : 'partial';
+      } else {
+        // Motor, pneu e vento continuam pelo sintetizador procedural que já existe.
+        this.samp = null;
+        this.sampleState = 'procedural-fallback';
+      }
+    } catch (e) {
+      console.warn('[F1] falha geral ao preparar áudio gravado; usando áudio procedural:', e);
+      this.samp = null;
+      this.sampleState = 'procedural-fallback';
+    }
   },
   // torcida (largada, ultrapassagem, chegada) e chiado curto de rádio antes da fala do engenheiro
   cheer(vol) {
@@ -4246,6 +4278,8 @@ function updateAutoPerformance(frameMs) {
   }
 }
 function renderFrame() {
+  // AutoReset desligado para o monitor V20 contar a cena inteira e todos os passes de pós-processamento.
+  if (renderer.info) { renderer.info.autoReset = false; renderer.info.reset(); }
   if (!post.on) { renderer.setRenderTarget(null); renderer.render(scene, camera); return; }
   renderer.setRenderTarget(post.rtS); renderer.render(scene, camera);
   quad.material = matBright;
@@ -4282,6 +4316,8 @@ function frame(now) {
   }
   try { renderFrame(); }
   catch (err) { if (!window.__apxRenderFrameError) { window.__apxRenderFrameError = true; console.error('[Apex Rush] erro ao renderizar:', err); } }
+  try { if (window.__apxV20 && window.__apxV20.update) window.__apxV20.update(now, rawFrameMs); }
+  catch (err) { if (!window.__apxV20DiagError) { window.__apxV20DiagError = true; console.warn('[Apex Rush V20] monitor de desempenho desativado por erro:', err); } }
 }
 // celular começa no modo leve; computador no alto
 setQuality(isTouch ? 0 : 2);
@@ -5370,7 +5406,8 @@ function setCarModel(kind) {
   CAR_MODEL = kind;
   if (!baseCarModel) return;
   if (kind === 'f1' && !f1Gltf && GLTFLoader) {        // F1 clássico só carrega quando é escolhido
-    new GLTFLoader().loadAsync(F1_CAR_URL).then(g => { f1Gltf = g; if (CAR_MODEL === 'f1') setCarModel('f1'); }).catch(() => {});
+    if (window.__APEX_MODEL_DIAG) window.__APEX_MODEL_DIAG.f1 = 'loading';
+    new GLTFLoader().loadAsync(F1_CAR_URL).then(g => { f1Gltf = g; if (window.__APEX_MODEL_DIAG) window.__APEX_MODEL_DIAG.f1 = 'ready'; if (CAR_MODEL === 'f1') setCarModel('f1'); }).catch(err => { if (window.__APEX_MODEL_DIAG) window.__APEX_MODEL_DIAG.f1 = 'procedural-fallback'; console.warn('[F1] F1 clássico indisponível:', err); });
     return;
   }
   attachPlayerModel(makePlayerModel());
@@ -5515,21 +5552,38 @@ function attachPlayerModel(model) {
 // a tela inicial não deve depender deles para liberar a corrida.
 window.__carsReady = true;
 window.__crewReady = true;
+window.__APEX_MODEL_DIAG = {
+  base: GLTFLoader ? 'loading' : 'procedural-fallback',
+  driver: 'pending', helmet: 'pending', wheel: 'pending', f26: 'pending',
+  f1: 'not-requested', mclaren: 'pending', selected: CAR_MODEL
+};
 if (GLTFLoader) {
   const loader = new GLTFLoader();
   // 1) modelo embutido (leve): usado pelas IAs e, se não houver arquivo original, pelo jogador
   loader.load(CAR_GLB_URL, gltf => {
     baseCarModel = prepCarModel(gltf);
+    window.__APEX_MODEL_DIAG.base = 'ready';
     // carrega o GLB da F1 antes de montar os carros (se falhar, cai para o carro do handoff)
     (async () => {
       const ld = async (u, nm, fallback) => {
-        try { const g = await loader.loadAsync(u); apxLoadStep(); return g; }
-        catch (e) {
+        const key = ({ piloto: 'driver', capacete: 'helmet', volante: 'wheel', 'F1 2026': 'f26', 'F1 clássico': 'f1' })[nm];
+        if (key) window.__APEX_MODEL_DIAG[key] = 'loading';
+        try {
+          const g = await loader.loadAsync(u); apxLoadStep();
+          if (key) window.__APEX_MODEL_DIAG[key] = 'ready';
+          return g;
+        } catch (e) {
           if (fallback) {
             console.warn('[F1] ' + nm + ' em alta fidelidade falhou; tentando versão otimizada:', e);
-            try { const g = await loader.loadAsync(fallback); apxLoadStep(); return g; }
-            catch (e2) { console.warn('[F1] fallback de ' + nm + ' também falhou:', e2); }
+            try {
+              const g = await loader.loadAsync(fallback); apxLoadStep();
+              if (key) window.__APEX_MODEL_DIAG[key] = 'ready-fallback';
+              return g;
+            } catch (e2) {
+              console.warn('[F1] fallback de ' + nm + ' também falhou:', e2);
+            }
           } else console.warn('[F1] ' + nm + ':', e);
+          if (key) window.__APEX_MODEL_DIAG[key] = 'procedural-fallback';
           apxLoadStep(); return null;
         }
       };
@@ -5538,14 +5592,15 @@ if (GLTFLoader) {
       ais.forEach((ai, idx) => attachAiModel(ai, idx));
       attachPlayerModel(makePlayerModel());
       console.log('[F1] Carros carregados (modelo: ' + CAR_MODEL + ')');
+      window.__APEX_MODEL_DIAG.selected = CAR_MODEL;
       window.__carsReady = true;
     })();
     // 2) modelo original (McLaren, qualidade total) fica disponível como opção no título
     loader.load('mclaren_mcl60_f1_2023.glb',
-      g2 => { bigCarModel = prepCarModel(g2); if (CAR_MODEL === 'mclaren') attachPlayerModel(makePlayerModel()); console.log('[F1] Modelo original mclaren_mcl60_f1_2023.glb carregado'); },
+      g2 => { bigCarModel = prepCarModel(g2); window.__APEX_MODEL_DIAG.mclaren = 'ready'; if (CAR_MODEL === 'mclaren') attachPlayerModel(makePlayerModel()); console.log('[F1] Modelo original mclaren_mcl60_f1_2023.glb carregado'); },
       undefined,
-      () => { /* arquivo original não está na pasta: fica o embutido */ });
-  }, undefined, () => { window.__carsReady = true; /* sem modelo: usa mesh procedural */ });
+      () => { window.__APEX_MODEL_DIAG.mclaren = 'not-found-optional'; /* arquivo original não está na pasta: fica o embutido */ });
+  }, undefined, () => { window.__APEX_MODEL_DIAG.base = 'procedural-fallback'; window.__carsReady = true; /* sem modelo: usa mesh procedural */ });
 } else window.__carsReady = true;
 
 // ---------------------------------------------------------------- LINHA DE REFERÊNCIA
@@ -7330,6 +7385,7 @@ function apxRender() {
           ${HUD_EL.map(([id, n]) => `<div class="tog${hudCfg.off[id] ? '' : ' on'}" data-tog="hud:${id}"><i><b></b></i>${n}</div>`).join('')}
         </div></div>
         <div class="brow"><button class="obtn" data-act="hudedit">Posicionar painéis na tela</button><button class="obtn n" data-act="hudreset">Restaurar HUD</button></div>
+        <div class="brow"><button class="obtn n" data-act="diag">Monitor técnico · F10</button></div>
         <div class="note">Carro F1 2026: Nimaxo (CGTrader). Mecânicos: Mixamo (Y Bot; animações Breathing Idle e Kneeling Idle). Som do motor: Djsapa (Motion Array). Pneu: audible-edge (CC-BY 3.0). Torcida: Gregor Quendel (CC-BY 4.0). Rádio: CC0. Capacete: OpenGameArt. Volante McLaren F1: dhimasdc9 (Sketchfab), licença CC BY 4.0. Circuito de Xangai: traçado extraído do modelo enviado. Interlagos, Monza, Spa, Silverstone, Red Bull Ring, Zandvoort e Montreal: traçados do projeto f1-circuits (Tomislav Bacinger, licença MIT).</div>
         </div>`;
       break;
@@ -7549,6 +7605,7 @@ document.addEventListener('click', e => {
     if (a === 'chreset') { if (!apx.chArm) { apx.chArm = true; setTimeout(() => { apx.chArm = false; apxRender(); }, 3000); return apxRender(); } apx.chArm = false; try { localStorage.removeItem('apex_champ'); } catch (err) {} return apxRender(); }
     if (a === 'menu') { if (state === ST.FINISHED) toMenu(); return apxGo('menu'); }
     if (a === 'hudedit') return hudEdit(true);
+    if (a === 'diag') return window.__apxV20 && window.__apxV20.toggle();
     if (a === 'hudreset') { hudCfg.off = {}; hudCfg.pos = {}; hudCfg.sc = {}; hudCfg.size = 1; hudCfg.op = 0; hudSave(); applyHud(); return apxRender(); }
     if (a === 'loadtrack') { cfgSave(); try { localStorage.setItem('apex_track', String(apx.trackSel)); } catch (err) {} location.reload(); return; }
   }
@@ -8582,6 +8639,198 @@ window.__apxV18WheelDisplay = {
   redraw() { if (player && player.car && player.car.screenCtx) drawApexScreen(player.car); }
 };
 console.info('[Apex Rush V18] Driver Display do volante redesenhado e sincronizado com as zonas de toque.');
+
+/* ================================================================
+   APEX RUSH V20 — STABILITY MONITOR & DIAGNOSTIC TOOLING
+   Telemetria de FPS, contadores WebGL, saúde dos modelos e do áudio.
+   Não modifica entradas, forças, aderência, IA ou relógio de simulação.
+   Atalho: F10. Também disponível em Configurações.
+   ================================================================ */
+(function initApexRushV20Diagnostics() {
+  const errors = [];
+  const frameTimes = new Float32Array(180);
+  let frameCursor = 0, frameCount = 0, lastUiAt = 0, diagOpen = false;
+  let lastFrameMs = 0, avgFrameMs = 16.7, worstFrameMs = 0;
+  const safeText = value => String(value == null ? '—' : value);
+  const pushError = (kind, message) => {
+    const item = { time: new Date().toLocaleTimeString(), kind, message: safeText(message).slice(0, 220) };
+    errors.push(item);
+    if (errors.length > 8) errors.shift();
+  };
+  window.addEventListener('error', event => {
+    const where = event.filename ? ' · ' + event.filename.split('/').pop() + (event.lineno ? ':' + event.lineno : '') : '';
+    pushError('JS', (event.message || 'Erro JavaScript') + where);
+  });
+  window.addEventListener('unhandledrejection', event => {
+    const reason = event.reason;
+    pushError('PROMISE', reason && (reason.message || String(reason)) || 'Promise rejeitada');
+  });
+  canvas.addEventListener('webglcontextlost', event => {
+    event.preventDefault();
+    pushError('WEBGL', 'Contexto gráfico perdido; aguardando restauração do navegador.');
+  }, false);
+  canvas.addEventListener('webglcontextrestored', () => pushError('WEBGL', 'Contexto gráfico restaurado pelo navegador.'), false);
+
+  const style = document.createElement('style');
+  style.textContent = `
+    #apxV20Diag{position:fixed;z-index:10020;top:14px;right:14px;width:min(390px,calc(100vw - 28px));max-height:min(82vh,760px);overflow:auto;
+      display:none;padding:14px;border:1px solid rgba(145,132,217,.48);border-radius:12px;color:#eef0f7;
+      background:rgba(10,13,22,.94);box-shadow:0 14px 42px rgba(0,0,0,.42);backdrop-filter:blur(14px);
+      -webkit-backdrop-filter:blur(14px);font:12px/1.4 Inter,system-ui,sans-serif;pointer-events:auto;}
+    #apxV20Diag.open{display:block}
+    #apxV20Diag .v20d-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+    #apxV20Diag .v20d-title{font-size:12px;font-weight:900;letter-spacing:.13em;color:#d2cefd}
+    #apxV20Diag .v20d-actions{display:flex;gap:6px}
+    #apxV20Diag button{border:1px solid #42495c;border-radius:6px;padding:5px 8px;background:#1a2030;color:#e8eafa;font:700 10px system-ui,sans-serif;cursor:pointer}
+    #apxV20Diag button:hover{border-color:#9184d9}
+    #apxV20Diag .v20d-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+    #apxV20Diag .v20d-card{min-width:0;padding:9px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(255,255,255,.035)}
+    #apxV20Diag .v20d-label{font-size:9px;letter-spacing:.1em;color:#8994aa;text-transform:uppercase}
+    #apxV20Diag .v20d-value{margin-top:3px;font-size:19px;font-weight:850;font-variant-numeric:tabular-nums;white-space:nowrap}
+    #apxV20Diag .v20d-sub{font-size:10px;color:#aab3c5}
+    #apxV20Diag .v20d-section{margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.09)}
+    #apxV20Diag .v20d-section h4{margin:0 0 7px;font-size:9px;letter-spacing:.12em;color:#aeb8cb}
+    #apxV20Diag .v20d-row{display:flex;justify-content:space-between;gap:10px;padding:3px 0;color:#aeb8cb}
+    #apxV20Diag .v20d-row b{color:#eff1fa;text-align:right;overflow-wrap:anywhere;font-weight:700}
+    #apxV20Diag .v20d-errors{max-height:100px;overflow:auto;color:#e8b6aa;font-size:10px;white-space:pre-wrap;overflow-wrap:anywhere}
+    #apxV20Diag .v20d-ok{color:#6be2a5!important}#apxV20Diag .v20d-warn{color:#ffd17d!important}
+    @media(max-width:560px){#apxV20Diag{top:8px;right:8px;width:calc(100vw - 16px);max-height:76vh;padding:10px}}
+  `;
+  document.head.appendChild(style);
+  const panel = document.createElement('section');
+  panel.id = 'apxV20Diag';
+  panel.setAttribute('aria-label', 'Monitor técnico Apex Rush');
+  panel.innerHTML = `
+    <div class="v20d-head"><div class="v20d-title">APEX RUSH · MONITOR TÉCNICO</div><div class="v20d-actions"><button type="button" data-v20="copy">COPIAR</button><button type="button" data-v20="close">FECHAR</button></div></div>
+    <div class="v20d-grid">
+      <div class="v20d-card"><div class="v20d-label">FPS médio</div><div class="v20d-value" data-v20="fps">—</div><div class="v20d-sub" data-v20="low">5% low aprox. —</div></div>
+      <div class="v20d-card"><div class="v20d-label">Frame time</div><div class="v20d-value" data-v20="frame">—</div><div class="v20d-sub" data-v20="avg">média —</div></div>
+      <div class="v20d-card"><div class="v20d-label">Draw calls</div><div class="v20d-value" data-v20="calls">—</div><div class="v20d-sub" data-v20="triangles">triângulos —</div></div>
+      <div class="v20d-card"><div class="v20d-label">Escala de render</div><div class="v20d-value" data-v20="scale">—</div><div class="v20d-sub" data-v20="resolution">resolução —</div></div>
+    </div>
+    <div class="v20d-section"><h4>RECURSOS</h4>
+      <div class="v20d-row"><span>Gráficos / sombras</span><b data-v20="quality">—</b></div>
+      <div class="v20d-row"><span>Geometrias / texturas</span><b data-v20="memory">—</b></div>
+      <div class="v20d-row"><span>Carros / modelos</span><b data-v20="models">—</b></div>
+      <div class="v20d-row"><span>Áudio</span><b data-v20="audio">—</b></div>
+      <div class="v20d-row"><span>WebGL</span><b data-v20="webgl">—</b></div>
+    </div>
+    <div class="v20d-section"><h4>ERROS RECENTES</h4><div class="v20d-errors" data-v20="errors">Nenhum erro registrado nesta sessão.</div></div>
+    <div class="v20d-sub" style="margin-top:8px">F10 abre/fecha este painel. Os dados ajudam a diagnosticar quedas de FPS, falhas de modelos e áudio.</div>
+  `;
+  document.body.appendChild(panel);
+  const el = key => panel.querySelector(`[data-v20="${key}"]`);
+  const set = (key, value, cls) => {
+    const node = el(key); if (!node) return;
+    node.textContent = safeText(value);
+    node.classList.remove('v20d-ok', 'v20d-warn');
+    if (cls) node.classList.add(cls);
+  };
+  function modelSummary() {
+    const d = window.__APEX_MODEL_DIAG || {};
+    const current = safeText(d.selected || CAR_MODEL).toUpperCase();
+    const base = safeText(d.base || (window.__carsReady ? 'procedural-ready' : 'loading'));
+    const selectedReady = CAR_MODEL === 'f26' ? d.f26 === 'ready' : CAR_MODEL === 'f1' ? d.f1 === 'ready' : CAR_MODEL === 'mclaren' ? d.mclaren === 'ready' : true;
+    const fallback = !selectedReady && CAR_MODEL !== 'apex';
+    return `${current} · base ${base}${fallback ? ' · fallback/procedural' : ''}`;
+  }
+  function makeReport() {
+    const sorted = Array.from(frameTimes.slice(0, frameCount)).filter(v => v > 0).sort((a,b) => a-b);
+    const mean = sorted.length ? sorted.reduce((a,b) => a+b, 0) / sorted.length : 0;
+    const p95 = sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))] : 0;
+    const gl = renderer.getContext();
+    const data = {
+      version: window.__APEX_RUSH_VERSION__ || 'V20',
+      capturedAt: new Date().toISOString(),
+      state: state, camera: camMode, car: CAR_MODEL,
+      fpsAverage: mean ? +(1000 / mean).toFixed(1) : null,
+      fpsLowApprox: p95 ? +(1000 / p95).toFixed(1) : null,
+      frameMsCurrent: +lastFrameMs.toFixed(2), frameMsAverage: +avgFrameMs.toFixed(2),
+      render: { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures,
+        pixelRatio: +renderer.getPixelRatio().toFixed(2), scale: +perfScale.toFixed(2), shadows: !!renderer.shadowMap.enabled,
+        buffer: (() => { const v = new THREE.Vector2(); renderer.getDrawingBufferSize(v); return [v.x, v.y]; })() },
+      modelAssets: window.__APEX_MODEL_DIAG || null,
+      carsReady: !!window.__carsReady, crewReady: !!window.__crewReady,
+      audio: { context: audio.ctx ? audio.ctx.state : 'not-started', samples: audio.sampleState || 'unknown', muted: !!audio.muted },
+      webgl: { contextLost: gl.isContextLost(), maxTextureSize: renderer.capabilities.maxTextureSize },
+      errors: errors.slice(-8)
+    };
+    return JSON.stringify(data, null, 2);
+  }
+  async function copyReport() {
+    const report = makeReport();
+    try {
+      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(report);
+      else throw new Error('Clipboard API indisponível');
+      set('errors', 'Relatório copiado.');
+    } catch (_) {
+      const ta = document.createElement('textarea'); ta.value = report; ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+      document.body.appendChild(ta); ta.select();
+      let copied = false; try { copied = document.execCommand('copy'); } catch (e) {}
+      ta.remove(); set('errors', copied ? 'Relatório copiado.' : report.slice(0, 900));
+    }
+  }
+  function toggleV20Diagnostics(force) {
+    diagOpen = typeof force === 'boolean' ? force : !diagOpen;
+    panel.classList.toggle('open', diagOpen);
+    panel.setAttribute('aria-hidden', diagOpen ? 'false' : 'true');
+    if (diagOpen) { lastUiAt = 0; updateV20Diagnostics(performance.now(), 0); }
+  }
+  window.addEventListener('keydown', event => {
+    if (event.code !== 'F10' || event.repeat) return;
+    if (event.target && /INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) return;
+    event.preventDefault(); toggleV20Diagnostics();
+  });
+  panel.addEventListener('click', event => {
+    const action = event.target && event.target.closest('[data-v20]');
+    if (!action) return;
+    if (action.dataset.v20 === 'close') toggleV20Diagnostics(false);
+    if (action.dataset.v20 === 'copy') copyReport();
+  });
+  function updateV20Diagnostics(now, frameMs) {
+    if (Number.isFinite(frameMs) && frameMs > 0) {
+      lastFrameMs = frameMs;
+      frameTimes[frameCursor] = Math.min(250, frameMs);
+      frameCursor = (frameCursor + 1) % frameTimes.length;
+      frameCount = Math.min(frameTimes.length, frameCount + 1);
+      avgFrameMs += (Math.min(250, frameMs) - avgFrameMs) * 0.035;
+      worstFrameMs = Math.max(worstFrameMs * 0.992, frameMs);
+    }
+    if (!diagOpen || now - lastUiAt < 300) return;
+    lastUiAt = now;
+    const samples = Array.from(frameTimes.slice(0, frameCount)).filter(v => v > 0).sort((a,b) => a-b);
+    const mean = samples.length ? samples.reduce((sum, value) => sum + value, 0) / samples.length : avgFrameMs;
+    const p95 = samples.length ? samples[Math.min(samples.length - 1, Math.floor(samples.length * 0.95))] : 0;
+    const fps = mean > 0 ? 1000 / mean : 0;
+    const low = p95 > 0 ? 1000 / p95 : 0;
+    set('fps', fps ? fps.toFixed(1) : '—', fps >= 58 ? 'v20d-ok' : fps >= 42 ? 'v20d-warn' : '');
+    set('low', `5% low aprox. ${low ? low.toFixed(1) + ' FPS' : '—'} · pico recente ${worstFrameMs.toFixed(1)} ms`);
+    set('frame', `${lastFrameMs.toFixed(1)} ms`);
+    set('avg', `média móvel ${mean.toFixed(1)} ms`);
+    set('calls', renderer.info.render.calls);
+    set('triangles', `triângulos ${Number(renderer.info.render.triangles || 0).toLocaleString('pt-BR')}`);
+    set('scale', `${(renderer.getPixelRatio() * 100).toFixed(0)}%`);
+    const size = new THREE.Vector2(); renderer.getDrawingBufferSize(size);
+    set('resolution', `${Math.round(size.x)} × ${Math.round(size.y)} · fator ${perfScale.toFixed(2)}`);
+    set('quality', `${perfAuto ? 'Auto FPS' : quality ? 'Alta' : 'Leve'} · sombras ${renderer.shadowMap.enabled ? 'ON' : 'OFF'}`);
+    set('memory', `${renderer.info.memory.geometries || 0} geo · ${renderer.info.memory.textures || 0} tex`);
+    set('models', modelSummary(), window.__carsReady ? 'v20d-ok' : 'v20d-warn');
+    const audioLabel = audio.ctx ? `${audio.ctx.state} · ${audio.sampleState || 'procedural'}${audio.muted ? ' · mudo' : ''}` : 'aguardando interação';
+    set('audio', audioLabel, audio.ctx && audio.ctx.state === 'running' ? 'v20d-ok' : 'v20d-warn');
+    let glLost = false; try { glLost = renderer.getContext().isContextLost(); } catch (e) { glLost = true; }
+    set('webgl', glLost ? 'contexto perdido' : `ativo · max texture ${renderer.capabilities.maxTextureSize}`, glLost ? 'v20d-warn' : 'v20d-ok');
+    set('errors', errors.length ? errors.slice(-5).map(x => `${x.time} [${x.kind}] ${x.message}`).join('\n') : 'Nenhum erro registrado nesta sessão.', errors.length ? 'v20d-warn' : 'v20d-ok');
+  }
+  window.__apxV20 = {
+    toggle: toggleV20Diagnostics,
+    report: makeReport,
+    update: updateV20Diagnostics,
+    get open() { return diagOpen; },
+    get errors() { return errors.slice(); }
+  };
+  window.__APEX_RUSH_VERSION__ = 'V20 Stability & Diagnostics';
+  console.info('[Apex Rush V20] Monitor técnico, estados de assets e fallback parcial de áudio ativos. F10 abre o monitor.');
+})();
 
 /*<END>*/
 </script>
