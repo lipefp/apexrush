@@ -4970,37 +4970,80 @@ function prepF26Model(gltf) {
   wrap.updateMatrixWorld(true); b = new T.Box3().setFromObject(wrap);
   model.position.set(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);
   wrap.updateMatrixWorld(true);
-  const wheels = []; model.traverse(o => { if (o.isMesh && /wheel/i.test((o.material && o.material.name) || o.name)) wheels.push(o); });
+  // V17: identificar rodas pelo nome do objeto E por todos os materiais.
+  // Alguns GLBs nomeiam a malha como Tire_* e o material como Rubber_*;
+  // a seleção antiga priorizava o material e acabava ignorando essas rodas.
+  const wheels = [];
+  model.traverse(o => {
+    if (!o.isMesh || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    const identity = [o.name || '', ...mats.map(m => m && m.name || '')].join(' ');
+    if (/(wheel|tire|tyre|pneu|rim|tread)/i.test(identity)) wheels.push(o);
+  });
   const piv = [];
   const axleLabels = ['RL', 'RR', 'FL', 'FR'];
   for (let q = 0; q < 4; q++) {
     const g = new T.Group();
     g.name = 'ApexRush_V10_Axle_' + axleLabels[q];
     g.userData.axis = [1, 0, 0]; g.userData.front = q >= 2;
-    g.userData.v10Axle = true; piv.push(g);
+    g.userData.v10Axle = true; g.userData.v17WheelPivot = true; piv.push(g);
   }
   for (const wm of wheels) {
     const g = wm.geometry, pa = g.attributes.position, na = g.attributes.normal, ua = g.attributes.uv, idx = g.index;
     const cnt = idx ? idx.count : pa.count, at = i => idx ? idx.getX(i) : i;
     const nm = new T.Matrix3().getNormalMatrix(wm.matrixWorld), buckets = [[], [], [], []], c = new T.Vector3();
-    for (let t = 0; t < cnt; t += 3) {
-      c.set(0, 0, 0); for (let j = 0; j < 3; j++) c.add(v.fromBufferAttribute(pa, at(t + j)).applyMatrix4(wm.matrixWorld));
-      buckets[(c.x > 0 ? 1 : 0) + (c.z > 0 ? 2 : 0)].push(t);
+    const sourceGroups = Array.isArray(g.groups) ? g.groups : [];
+    const materialCount = Array.isArray(wm.material) ? Math.max(1, wm.material.length) : 1;
+    const materialAt = offset => {
+      for (const group of sourceGroups) {
+        if (offset >= group.start && offset < group.start + group.count) {
+          return Math.max(0, Math.min(materialCount - 1, Number(group.materialIndex) || 0));
+        }
+      }
+      return 0;
+    };
+    for (let t = 0; t + 2 < cnt; t += 3) {
+      c.set(0, 0, 0);
+      for (let j = 0; j < 3; j++) c.add(v.fromBufferAttribute(pa, at(t + j)).applyMatrix4(wm.matrixWorld));
+      const q = (c.x > 0 ? 1 : 0) + (c.z > 0 ? 2 : 0);
+      buckets[q].push({ offset: t, materialIndex: materialAt(t) });
     }
+    let builtMeshes = 0;
     buckets.forEach((tris, q) => {
       if (!tris.length) return;
-      const P = [], N = [], U = [], n3 = new T.Vector3();
-      for (const t of tris) for (let j = 0; j < 3; j++) { const ii = at(t + j);
-        v.fromBufferAttribute(pa, ii).applyMatrix4(wm.matrixWorld); P.push(v.x, v.y, v.z);
-        if (na) { n3.fromBufferAttribute(na, ii).applyMatrix3(nm).normalize(); N.push(n3.x, n3.y, n3.z); }
-        if (ua) U.push(ua.getX(ii), ua.getY(ii)); }
-      const ng = new T.BufferGeometry(); ng.setAttribute('position', new T.Float32BufferAttribute(P, 3));
+      const P = [], N = [], U = [], runs = [], n3 = new T.Vector3();
+      for (const tri of tris) {
+        const materialIndex = tri.materialIndex;
+        const runStart = P.length / 3;
+        for (let j = 0; j < 3; j++) {
+          const ii = at(tri.offset + j);
+          v.fromBufferAttribute(pa, ii).applyMatrix4(wm.matrixWorld); P.push(v.x, v.y, v.z);
+          if (na) { n3.fromBufferAttribute(na, ii).applyMatrix3(nm).normalize(); N.push(n3.x, n3.y, n3.z); }
+          if (ua) U.push(ua.getX(ii), ua.getY(ii));
+        }
+        const last = runs[runs.length - 1];
+        if (last && last.materialIndex === materialIndex && last.start + last.count === runStart) last.count += 3;
+        else runs.push({ start: runStart, count: 3, materialIndex });
+      }
+      const ng = new T.BufferGeometry();
+      ng.setAttribute('position', new T.Float32BufferAttribute(P, 3));
       if (N.length) ng.setAttribute('normal', new T.Float32BufferAttribute(N, 3)); else ng.computeVertexNormals();
       if (U.length) ng.setAttribute('uv', new T.Float32BufferAttribute(U, 2));
-      const me = new T.Mesh(ng, wm.material); me.name = (wm.name || 'Wheel') + '_V16Segment_' + q;
-      me.castShadow = true; me.frustumCulled = false; me.userData.wq = q; piv[q].add(me);
+      // Preserva os grupos de material do GLB: sem eles, o pneu podia herdar
+      // apenas o material do cubo/miolo e parecer desaparecer, deixando o eixo exposto.
+      for (const run of runs) ng.addGroup(run.start, run.count, run.materialIndex);
+      ng.computeBoundingBox(); ng.computeBoundingSphere();
+      const me = new T.Mesh(ng, wm.material);
+      me.name = (wm.name || 'Wheel') + '_V17Segment_' + q;
+      me.castShadow = wm.castShadow; me.receiveShadow = wm.receiveShadow;
+      me.frustumCulled = false; me.renderOrder = wm.renderOrder;
+      me.userData.wq = q; me.userData.v17MaterialGroupsPreserved = true;
+      piv[q].add(me); builtMeshes++;
     });
-    wm.parent.remove(wm);
+    // Se a malha não pôde ser dividida com segurança, mantém a original visível
+    // em vez de removê-la e deixar um pivô vazio.
+    if (builtMeshes > 0 && wm.parent) wm.parent.remove(wm);
+    else wm.frustumCulled = false;
   }
   for (const g of piv) {                          // pivô no centro de cada roda
     if (!g.children.length) continue;
@@ -8279,7 +8322,7 @@ const _cv = new THREE.Vector3(); let _crewF = 0;
   applyCameraPrefs();
   stabilizeAll();
 
-  window.__APEX_RUSH_VERSION__ = 'V16';
+  window.__APEX_RUSH_VERSION__ = 'V17';
   window.__apxV16HUD = {
     get camera() { return currentCamera(); },
     get preferences() { return prefs.map(v => ({ ...v })); },
@@ -8288,7 +8331,78 @@ const _cv = new THREE.Vector3(); let _crewF = 0;
     reset(camera = currentCamera()) { prefs[clamp(camera, 0, 2)] = { ...defaults[clamp(camera, 0, 2)] }; save(); renderPanel(); applyCameraPrefs(); },
     destroy() { clearInterval(syncTimer); panel.remove(); openBtn.remove(); }
   };
-  console.info('[Apex Rush V16] HUD por câmera, layout simétrico e proteção visual das rodas ativados.');
+  console.info('[Apex Rush V17] HUD por câmera e preservação dos materiais das rodas ativados.');
+})();
+
+/* ================================================================
+   APEX RUSH V17 — WHEEL MATERIAL INTEGRITY + CAMERA HUD POLISH
+   Preserva grupos de materiais dos pneus e reforça a visibilidade dos pivôs.
+   Nenhuma lógica de simulação, força, aderência ou IA é modificada.
+   ================================================================ */
+(function initApexRushV17() {
+  if (window.__apxV17Installed) return;
+  window.__apxV17Installed = true;
+
+  // Correção defensiva: GLBs com malhas e materiais multi-grupo podem perder
+  // o material de borracha quando os triângulos são particionados por roda.
+  // O particionamento V17 reconstrói os grupos; este guarda mantém os pivôs
+  // e seus meshes fora do frustum, sem escalar o conjunto inteiro.
+  function stabilizeWheelRender(car) {
+    if (!car || !car.glbModel || typeof getV10Rig !== 'function') return;
+    const rig = getV10Rig(car);
+    if (!rig || !Array.isArray(rig.wheels)) return;
+    for (const wheel of rig.wheels) {
+      const node = wheel && wheel.node;
+      if (!node) continue;
+      node.frustumCulled = false;
+      node.traverse(obj => {
+        if (!obj || !obj.isMesh) return;
+        obj.frustumCulled = false;
+        if (obj.geometry && (!obj.geometry.boundingSphere || !Number.isFinite(obj.geometry.boundingSphere.radius))) {
+          obj.geometry.computeBoundingSphere();
+        }
+        // Confere que os segmentos criados no V17 continuam com grupos válidos.
+        if (obj.userData && obj.userData.v17MaterialGroupsPreserved && obj.geometry) {
+          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+          const groups = obj.geometry.groups || [];
+          if (groups.length && groups.some(g => g.materialIndex >= mats.length)) {
+            obj.geometry.groups.forEach(g => { g.materialIndex = Math.max(0, Math.min(mats.length - 1, g.materialIndex)); });
+          }
+        }
+      });
+    }
+  }
+
+  const maintain = () => {
+    try {
+      if (typeof player !== 'undefined' && player && player.car) stabilizeWheelRender(player.car);
+      if (typeof ais !== 'undefined' && Array.isArray(ais)) ais.forEach(a => a && stabilizeWheelRender(a.car));
+    } catch (err) { console.warn('[Apex Rush V17] Guarda visual das rodas:', err); }
+  };
+
+  // A V16 já fazia esta verificação a cada 650 ms. V17 faz um passe após
+  // carregamentos/trocas de carro e mantém a checagem leve a cada 900 ms.
+  maintain();
+  const timer = setInterval(() => {
+    if (typeof state !== 'undefined' && (state === ST.PLAYING || state === ST.PAUSED)) maintain();
+  }, 900);
+
+  const hudPanel = document.getElementById('apxV16HudPanel');
+  if (hudPanel) {
+    const hint = hudPanel.querySelector('.v16Hint');
+    if (hint) hint.textContent = 'Preferências exclusivas desta câmera. Alterne os itens e troque de câmera para personalizar cada enquadramento.';
+    hudPanel.style.maxHeight = 'min(76vh, 620px)';
+    hudPanel.style.overflowY = 'auto';
+    hudPanel.style.overscrollBehavior = 'contain';
+  }
+
+  window.__APEX_RUSH_VERSION__ = 'V17';
+  window.__apxV17 = {
+    checkWheels: maintain,
+    get installed() { return true; },
+    destroy() { clearInterval(timer); }
+  };
+  console.info('[Apex Rush V17] Integridade dos materiais de pneu e guarda visual ativos.');
 })();
 
 /*<END>*/
