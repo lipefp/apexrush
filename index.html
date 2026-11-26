@@ -3434,7 +3434,22 @@ function getV10Rig(car) {
     if (disc && disc.material && disc.material.clone && !disc.userData.v10BrakeMaterial) {
       disc.material = disc.material.clone(); disc.userData.v10BrakeMaterial = true;
     }
-    return { point, node, body, piston, disc, offset: 0, velocity: 0, brakeHeat: 0, upper: new THREE.Vector3(), lower: new THREE.Vector3(), mid: new THREE.Vector3(), split: new THREE.Vector3() };
+    const tyreParts = [];
+    if (node) node.traverse(o => {
+      if (!o.isMesh || !o.geometry || /disc|spoke|rim|caliper|actuator|wishbone|piston|damper/i.test(o.name || '')) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const rubber = mats.some(m => {
+        if (!m || !m.color) return false;
+        const c = m.color;
+        const lum = c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722;
+        return lum < 0.13 && (m.roughness == null || m.roughness > 0.52) && (m.metalness == null || m.metalness < 0.38);
+      });
+      if (rubber) tyreParts.push({ mesh: o, baseScale: o.scale.clone(), basePosition: o.position.clone() });
+    });
+    // Fallback para GLBs que agrupam a borracha com o aro em uma única malha/material.
+    // A escala é extremamente pequena e aplicada ao conjunto visual da roda, nunca ao contato físico.
+    if (!tyreParts.length && node) tyreParts.push({ mesh: node, baseScale: node.scale.clone(), basePosition: null, radialOnly: true });
+    return { point, node, body, piston, disc, tyreParts, offset: 0, velocity: 0, brakeHeat: 0, upper: new THREE.Vector3(), lower: new THREE.Vector3(), mid: new THREE.Vector3(), split: new THREE.Vector3() };
   });
   const rig = {
     model, pack, wheels,
@@ -3444,10 +3459,18 @@ function getV10Rig(car) {
     actuatorR: model.getObjectByName('V10_DRS_Actuator_R'),
     rainLight: model.getObjectByName('V9_RearRainLight'),
     steeringWheel: model.getObjectByName('ApexRush_V10_SteeringWheel'),
-    drsBlend: 0, rearBaseX: 0, frontBaseX: [],
+    drsBlend: 0, rearBaseX: 0, frontBaseX: [], rearBasePosition: null, frontBaseY: [], vibeParts: [],
   };
-  if (rig.rearFlap) rig.rearBaseX = rig.rearFlap.rotation.x;
+  if (rig.rearFlap) { rig.rearBaseX = rig.rearFlap.rotation.x; rig.rearBasePosition = rig.rearFlap.position.clone(); }
   rig.frontBaseX = rig.frontFlaps.map(f => f.rotation.x);
+  rig.frontBaseY = rig.frontFlaps.map(f => f.position.y);
+  if (pack) pack.traverse(o => {
+    if (!o.isMesh) return;
+    const n = o.name || '';
+    if (/V9_FrontWing_Endplate|V9_RearWing_Endplate|V9_EngineSharkFin|V9_Sidepod_CoolingLouvre|V10_DRS_Actuator/.test(n)) {
+      rig.vibeParts.push({ node: o, position: o.position.clone(), rotation: o.rotation.clone(), phase: rig.vibeParts.length * 1.71 });
+    }
+  });
   car._v10Rig = rig;
   return rig;
 }
@@ -3512,6 +3535,25 @@ function updateV10MechanicalRide(car, r, dt, throttle, brake, steer, centerH, sl
       w.disc.material.emissiveIntensity = glow;
     }
   }
+  // V11: deformação óptica do pneu (somente malha/material; não altera raio de contato ou aderência).
+  const visualSpeed = Math.abs(r.vf !== undefined ? r.vf : (r.v || 0));
+  const speedLoad = clamp(visualSpeed / Math.max(1, VMAX), 0, 1);
+  const slipLoad = clamp(Math.abs(r.vl || 0) / 14, 0, 1);
+  rig.wheels.forEach((w, wi) => {
+    if (!w.tyreParts || !w.tyreParts.length) return;
+    const p = w.point;
+    const sideLoad = clamp(Math.abs(lateralG) / 2.4, 0, 1);
+    const kerbLoad = !!r.kerb && Math.sign(r.lat || 0) === Math.sign(p.x) ? 1 : 0;
+    const wheelLoad = clamp(0.22 + (p.front ? brake * 0.34 : throttle * 0.12) + sideLoad * 0.22 + Math.max(0, -w.offset) * 3.5 + kerbLoad * 0.10, 0, 1);
+    const squeeze = clamp(0.0012 + speedLoad * 0.0015 + wheelLoad * 0.0068 + slipLoad * 0.0018 + kerbLoad * 0.0015, 0, 0.014);
+    const tremor = (kerbLoad ? 0.00065 : 0.00012) * Math.sin(clock * (kerbLoad ? 38 : 22) + wi * 1.9);
+    for (const part of w.tyreParts) {
+      part.mesh.scale.set(part.baseScale.x * (1 + squeeze * 0.58), part.baseScale.y * (1 - squeeze), part.baseScale.z * (1 - squeeze));
+      if (!part.radialOnly && part.basePosition) part.mesh.position.set(part.basePosition.x, part.basePosition.y - squeeze * 0.045 + tremor, part.basePosition.z);
+    }
+  });
+  car._v11Motion = { speed: visualSpeed, speedLoad, lateralG, brake: brake || 0, throttle: throttle || 0, steer: steer || 0, slipLoad, kerb: !!r.kerb };
+
   if (rig.rainLight) {
     rig.rainLight.visible = !!wet;
     if (wet && rig.rainLight.material && rig.rainLight.material.color) {
@@ -3548,13 +3590,43 @@ function animateCar(car, dt, speed, moving, flapOpen) {
 
     // DRS: abre e fecha com amortecimento visual, obedecendo ao estado calculado pelo jogo.
     rig.drsBlend += ((flapOpen ? 1 : 0) - rig.drsBlend) * (1 - Math.exp(-dt * 8));
-    if (rig.rearFlap) rig.rearFlap.rotation.x = rig.rearBaseX - rig.drsBlend * 0.48;
-    const speedLoad = clamp(Math.abs(speed) / Math.max(1, VMAX), 0, 1);
+    const aeroLoad = speedLoad * speedLoad;
+    const motion = car._v11Motion || {};
+    const phase = clock * (24 + speedLoad * 22);
+    const aeroFlutter = moving ? Math.sin(phase) * (0.00035 + speedLoad * 0.00115 + (motion.kerb ? 0.0018 : 0)) : 0;
+    if (rig.rearFlap) {
+      rig.rearFlap.rotation.x = rig.rearBaseX - rig.drsBlend * 0.48 + aeroLoad * 0.010 + aeroFlutter * 1.8;
+      if (rig.rearBasePosition) rig.rearFlap.position.y = rig.rearBasePosition.y - aeroLoad * 0.0035 + aeroFlutter;
+    }
     rig.frontFlaps.forEach((flap, i) => {
-      flap.rotation.x = rig.frontBaseX[i] + speedLoad * 0.018 + Math.abs(car._v10SteerVisual) * 0.012;
+      flap.rotation.x = rig.frontBaseX[i] + aeroLoad * 0.021 + Math.abs(car._v10SteerVisual) * 0.012 + aeroFlutter * 1.2;
+      flap.position.y = rig.frontBaseY[i] - aeroLoad * 0.004 + aeroFlutter * 0.65;
     });
-    if (rig.actuatorL) rig.actuatorL.rotation.x = -rig.drsBlend * 0.38;
-    if (rig.actuatorR) rig.actuatorR.rotation.x = -rig.drsBlend * 0.38;
+    if (rig.actuatorL) rig.actuatorL.rotation.x = -rig.drsBlend * 0.38 + aeroFlutter * 0.35;
+    if (rig.actuatorR) rig.actuatorR.rotation.x = -rig.drsBlend * 0.38 - aeroFlutter * 0.35;
+    // Vibração microscópica de endplates, shark-fin, grelhas e atuadores: resposta visual ao fluxo.
+    for (const part of rig.vibeParts) {
+      const amp = moving ? (0.00025 + speedLoad * 0.0008 + (motion.kerb ? 0.0015 : 0)) : 0;
+      const wave = Math.sin(phase + part.phase) * amp;
+      part.node.position.y = part.position.y + wave;
+      part.node.rotation.z = part.rotation.z + wave * 0.8;
+    }
+  }
+
+  // V11: assentamento aerodinâmico e microvibração da carroceria, exclusivamente visuais.
+  const motion = car._v11Motion || {};
+  const v11SpeedLoad = clamp(Math.abs(speed) / Math.max(1, VMAX), 0, 1);
+  const v11Aero = v11SpeedLoad * v11SpeedLoad;
+  const visualBody = car.glbModel || car.shell;
+  if (visualBody) {
+    const bx = visualBody.position.x, by = visualBody.position.y, bz = visualBody.position.z;
+    const brx = visualBody.rotation.x, bry = visualBody.rotation.y, brz = visualBody.rotation.z;
+    const phase = clock * (19 + v11SpeedLoad * 27);
+    const active = moving ? 1 : 0;
+    const bump = motion.kerb ? 1 : 0;
+    const micro = active * (0.00035 + v11SpeedLoad * 0.0012 + bump * 0.0022);
+    visualBody.position.set(bx + Math.sin(phase * 0.73) * micro, by - v11Aero * 0.0075 + Math.sin(phase) * micro * 0.7, bz);
+    visualBody.rotation.set(brx + v11Aero * 0.0025 + Math.sin(phase * 0.91) * micro * 0.24, bry + Math.sin(phase * 0.61 + 0.8) * micro * 0.42, brz + Math.sin(phase * 0.83 + 1.7) * micro * 0.32);
   }
 
   // Mantém compatibilidade com qualquer modelo legado que ainda exponha f1axle.
@@ -3917,8 +3989,8 @@ resetRace();
 showUI();
 requestAnimationFrame(frame);
 
-// Apex Rush V10 — animações mecânicas, suspensão dinâmica e aerodinâmica móvel (visual-only).
-window.__APEX_RUSH_VERSION__ = 'V10';
+// Apex Rush V11 — pneus flexíveis, vibração mecânica e resposta aero em alta velocidade (visual-only).
+window.__APEX_RUSH_VERSION__ = 'V11';
 // ================================================================
 // ██████████████████████  FEATURES EXTRAS  ███████████████████████
 // ================================================================
