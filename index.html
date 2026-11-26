@@ -7472,8 +7472,203 @@ const _cv = new THREE.Vector3(); let _crewF = 0;
       }
     }
   };
-  window.__APEX_RUSH_VERSION__ = 'V12';
+  window.__APEX_RUSH_VERSION__ = 'V13';
   window.__apxV12Fx = { canvas: fxCanvas, get active() { return !!fxCtx; } };
+})();
+
+/* ================================================================
+   APEX RUSH V13 — WET TRACK SPRAY & BRAKE THERMAL FX
+   Camada estritamente visual. Não altera física, IA, inputs ou tempos.
+   ================================================================ */
+(function initApexRushV13FX() {
+  if (window.__apxV13Installed) return;
+  window.__apxV13Installed = true;
+
+  // --------------------------------------------------------------
+  // Freios: clona apenas os materiais dos discos para permitir brilho
+  // térmico individual sem contaminar o material compartilhado global.
+  const v13Racers = [player, ...ais];
+  for (const racer of v13Racers) {
+    const root = racer && racer.car && racer.car.group;
+    if (!root || racer.__apxV13BrakeDiscs) continue;
+    const discs = [];
+    root.traverse(obj => {
+      if (!obj || !obj.isMesh || obj.geometry !== GEO.brakeDisc || !obj.material || Array.isArray(obj.material)) return;
+      obj.material = obj.material.clone();
+      if (obj.material.emissive) {
+        obj.material.emissive.setHex(0x000000);
+        obj.material.emissiveIntensity = 0;
+      }
+      discs.push(obj.material);
+    });
+    racer.__apxV13BrakeDiscs = discs;
+    racer.__apxV13VisualHeat = 0;
+    racer.__apxV13LastSpeed = null;
+  }
+
+  function updateBrakeGlow(dt) {
+    for (const racer of v13Racers) {
+      const speed = racer === player
+        ? Math.max(Math.abs(racer.vf || 0), Math.hypot(racer.vx || 0, racer.vz || 0))
+        : Math.max(0, racer.v || 0);
+      let heat;
+      if (racer === player) {
+        // Temperatura já calculada pelo jogo, apenas lida pela camada visual.
+        heat = Math.max(0, Number(brakeTemp) || 0);
+      } else {
+        const prev = racer.__apxV13LastSpeed == null ? speed : racer.__apxV13LastSpeed;
+        const decel = dt > 0 ? clamp((prev - speed) / dt, 0, 24) : 0;
+        const target = clamp((decel - 1.8) / 14, 0, 1);
+        const oldHeat = racer.__apxV13VisualHeat || 0;
+        // Acúmulo e resfriamento somente visuais nos carros da IA.
+        heat = clamp(oldHeat + (target * 340 - (12 + speed * 0.018)) * dt, 0, 900);
+        racer.__apxV13VisualHeat = heat;
+        racer.__apxV13LastSpeed = speed;
+      }
+      const glow = clamp((heat - 340) / 560, 0, 1);
+      const discs = racer.__apxV13BrakeDiscs || [];
+      for (const mat of discs) {
+        if (!mat || !mat.emissive) continue;
+        mat.emissive.setRGB(0.08 + glow * 0.92, 0.006 + glow * 0.19, 0.002 + glow * 0.018);
+        mat.emissiveIntensity = glow * 1.65;
+      }
+    }
+  }
+
+  // --------------------------------------------------------------
+  // Spray de pneus: um único InstancedMesh mantém o custo de desenho
+  // baixo mesmo com todos os adversários soltando água na pista molhada.
+  const sprayCanvas = document.createElement('canvas');
+  sprayCanvas.width = sprayCanvas.height = 48;
+  const sprayCtx = sprayCanvas.getContext('2d');
+  if (sprayCtx) {
+    const grad = sprayCtx.createRadialGradient(24, 24, 1, 24, 24, 23);
+    grad.addColorStop(0, 'rgba(235,244,255,0.85)');
+    grad.addColorStop(0.32, 'rgba(205,222,242,0.42)');
+    grad.addColorStop(1, 'rgba(180,205,230,0)');
+    sprayCtx.fillStyle = grad;
+    sprayCtx.fillRect(0, 0, 48, 48);
+  }
+  const sprayTexture = new THREE.CanvasTexture(sprayCanvas);
+  sprayTexture.needsUpdate = true;
+  const sprayMaterial = new THREE.MeshBasicMaterial({
+    map: sprayTexture,
+    transparent: true,
+    opacity: 0.32,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    toneMapped: false
+  });
+  const sprayLimit = isTouch ? 96 : 168;
+  const sprayGeo = new THREE.PlaneGeometry(1, 1);
+  const sprayMesh = new THREE.InstancedMesh(sprayGeo, sprayMaterial, sprayLimit);
+  sprayMesh.name = 'ApexRushV13_TireSpray';
+  sprayMesh.frustumCulled = false;
+  sprayMesh.renderOrder = 4;
+  sprayMesh.count = 0;
+  sprayMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(sprayMesh);
+
+  const sprayPool = Array.from({ length: sprayLimit }, () => ({
+    x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
+    life: 0, max: 1, size: 0.2
+  }));
+  let sprayCursor = 0;
+  const sprayDummy = new THREE.Object3D();
+
+  function spawnTireSpray(racer, side, speed, intensity) {
+    const q = sprayPool[sprayCursor];
+    sprayCursor = (sprayCursor + 1) % sprayLimit;
+    const h = Number(racer.h) || 0;
+    const fx = Math.sin(h), fz = Math.cos(h);
+    const rx = Math.cos(h), rz = -Math.sin(h);
+    const x = (racer.x || 0) - fx * 2.05 + rx * side * 0.68;
+    const z = (racer.z || 0) - fz * 2.05 + rz * side * 0.68;
+    q.x = x;
+    q.y = groundH(x, z) + 0.24 + Math.random() * 0.12;
+    q.z = z;
+    const wake = 1.2 + speed * 0.14;
+    q.vx = -fx * wake + rx * side * (0.55 + Math.random() * 1.15) + (Math.random() - 0.5) * 0.8;
+    q.vz = -fz * wake + rz * side * (0.55 + Math.random() * 1.15) + (Math.random() - 0.5) * 0.8;
+    q.vy = 0.55 + Math.random() * (1.2 + intensity * 1.0);
+    q.max = 0.42 + Math.random() * 0.34;
+    q.life = q.max;
+    q.size = 0.12 + Math.random() * 0.13 + clamp(speed / Math.max(VMAX, 1), 0, 1) * 0.12;
+  }
+
+  function clearTireSpray() {
+    for (const p of sprayPool) p.life = 0;
+    sprayMesh.count = 0;
+    sprayMesh.visible = false;
+  }
+
+  function updateTireSpray(dt) {
+    const active = state === ST.PLAYING && started && wet;
+    if (!active) {
+      clearTireSpray();
+      for (const r of v13Racers) r.__apxV13SprayClock = 0;
+      return;
+    }
+    const intensity = clamp(Number(rainNow()) || 0.5, 0.25, 1);
+    const minSpeed = 15 + (1 - intensity) * 4;
+    for (const racer of v13Racers) {
+      if (!racer || racer.finished || (racer.pitT || 0) > 0) continue;
+      const speed = racer === player
+        ? Math.max(Math.abs(racer.vf || 0), Math.hypot(racer.vx || 0, racer.vz || 0))
+        : Math.max(0, racer.v || 0);
+      if (speed < minSpeed) continue;
+      racer.__apxV13SprayClock = (racer.__apxV13SprayClock || 0) - dt;
+      if (racer.__apxV13SprayClock <= 0) {
+        const speedFactor = clamp(speed / Math.max(VMAX, 1), 0, 1);
+        racer.__apxV13SprayClock = (quality ? 0.14 : 0.22) - speedFactor * (quality ? 0.045 : 0.055);
+        spawnTireSpray(racer, -1, speed, intensity);
+        spawnTireSpray(racer, 1, speed, intensity);
+      }
+    }
+
+    let visibleCount = 0;
+    for (const p of sprayPool) {
+      if (p.life <= 0) continue;
+      p.life = Math.max(0, p.life - dt);
+      if (p.life <= 0) continue;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.z += p.vz * dt;
+      p.vy -= 1.65 * dt;
+      const drag = Math.exp(-1.25 * dt);
+      p.vx *= drag;
+      p.vz *= drag;
+      const fade = clamp(p.life / p.max, 0, 1);
+      const size = p.size * (0.42 + fade * 0.78);
+      sprayDummy.position.set(p.x, p.y, p.z);
+      sprayDummy.quaternion.copy(camera.quaternion);
+      sprayDummy.scale.set(size * 1.45, size, 1);
+      sprayDummy.updateMatrix();
+      sprayMesh.setMatrixAt(visibleCount++, sprayDummy.matrix);
+    }
+    sprayMesh.count = visibleCount;
+    sprayMesh.visible = visibleCount > 0;
+    if (visibleCount) sprayMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  function updateV13(dt) {
+    if (state === ST.PLAYING) updateBrakeGlow(dt);
+    updateTireSpray(dt);
+  }
+
+  // Encadeia o hook existente; não substitui nem altera a simulação.
+  const previousExtras = _extrasFrameFn;
+  _extrasFrameFn = function apxV13Frame(dt) {
+    if (previousExtras) previousExtras(dt);
+    updateV13(dt);
+  };
+
+  window.__APEX_RUSH_VERSION__ = 'V13';
+  window.__apxV13FX = {
+    get sprayParticles() { return sprayPool.reduce((n, p) => n + (p.life > 0 ? 1 : 0), 0); },
+    get brakeDiscs() { return v13Racers.reduce((n, r) => n + ((r.__apxV13BrakeDiscs || []).length), 0); }
+  };
+  console.info('[Apex Rush V13] Spray de pneus e brilho térmico dos freios inicializados.');
 })();
 
 /*<END>*/
