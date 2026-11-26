@@ -3565,6 +3565,9 @@ function updateV10MechanicalRide(car, r, dt, throttle, brake, steer, centerH, sl
 
 // ---------------------------------------------------------------- Visual por frame
 function animateCar(car, dt, speed, moving, flapOpen) {
+  // V11.1 FIX: variável de carga aerodinâmica no escopo correto.
+  // Sem isso, o GLB ativa um ReferenceError a cada frame e interrompe o render.
+  const speedLoad = clamp(Math.abs(Number(speed) || 0) / Math.max(1, VMAX), 0, 1);
   if (moving) car.spinA += speed * dt / 0.34;
   for (const spin of car.spins || []) spin.rotation.x = car.spinA;
 
@@ -3684,9 +3687,10 @@ function updateCarRide(car, r, dt, throttle, brake, steer) {
     // Preserve the imported model's original placement (some GLBs are lifted from their local origin).
     if (car._rideBody !== body) {
       car._rideBody = body;
-      car._rideBase = { x: body.position.x, y: body.position.y, z: body.position.z, rx: body.rotation.x, rz: body.rotation.z };
+      car._rideBase = { x: body.position.x, y: body.position.y, z: body.position.z, rx: body.rotation.x, ry: body.rotation.y, rz: body.rotation.z };
     }
     const base = car._rideBase;
+    body.rotation.y = base.ry; // impede acumular o microbalanço visual entre frames
     const leftAvg = leftY / Math.max(1, wheelCount / 2), rightAvg = rightY / Math.max(1, wheelCount / 2);
     const frontAvg = frontY / Math.max(1, wheelCount / 2), rearAvg = rearY / Math.max(1, wheelCount / 2);
     const heave = ((leftAvg + rightAvg) * 0.5) - 0.345;
@@ -3978,9 +3982,16 @@ function frame(now) {
   let dt = (now - last) / 1000; last = now;
   if (!(dt > 0)) dt = 0; else if (dt > 0.05) dt = 0.05;   // clamp protege a física em quedas de FPS ou troca de aba
   if (state === ST.PLAYING || state === ST.FINISHED) simulate(dt);
-  updateVisuals(dt);
-  if (_extrasFrameFn) _extrasFrameFn(dt);
-  renderFrame();
+  // Proteção: falhas em animação/HUD opcional não podem interromper a renderização
+  // nem deixar a simulação presa numa única imagem.
+  try { updateVisuals(dt); }
+  catch (err) { if (!window.__apxVisualFrameError) { window.__apxVisualFrameError = true; console.error('[Apex Rush] erro visual recuperado:', err); } }
+  if (_extrasFrameFn) {
+    try { _extrasFrameFn(dt); }
+    catch (err) { if (!window.__apxExtrasFrameError) { window.__apxExtrasFrameError = true; console.error('[Apex Rush] erro em recurso extra recuperado:', err); } }
+  }
+  try { renderFrame(); }
+  catch (err) { if (!window.__apxRenderFrameError) { window.__apxRenderFrameError = true; console.error('[Apex Rush] erro ao renderizar:', err); } }
 }
 // celular começa no modo leve; computador no alto
 setQuality(isTouch ? 0 : 1);
@@ -3989,8 +4000,8 @@ resetRace();
 showUI();
 requestAnimationFrame(frame);
 
-// Apex Rush V11 — pneus flexíveis, vibração mecânica e resposta aero em alta velocidade (visual-only).
-window.__APEX_RUSH_VERSION__ = 'V11';
+// Apex Rush V11.1 — hotfix de renderização, menu e retomada de campeonato.
+window.__APEX_RUSH_VERSION__ = 'V11.1';
 // ================================================================
 // ██████████████████████  FEATURES EXTRAS  ███████████████████████
 // ================================================================
@@ -5233,7 +5244,15 @@ const apxNextFrame = () => new Promise(resolve => {
   await apxNextFrame();
   apxLoadStep('Pronto!');
   apxLoadDone();
-  try { if (localStorage.getItem('apex_champ_go') === '1') setTimeout(chStartWeekend, 600); } catch (e) {}
+  // Retoma campeonato apenas se a recarga foi solicitada nos últimos 30 segundos.
+  // Flags antigas não podem pular o menu e lançar uma corrida inesperadamente.
+  try {
+    const pending = localStorage.getItem('apex_champ_go') === '1';
+    const issuedAt = Number(localStorage.getItem('apex_champ_go_at') || 0);
+    const age = Date.now() - issuedAt;
+    if (pending && issuedAt > 0 && age >= 0 && age < 30000) setTimeout(chStartWeekend, 600);
+    else { localStorage.removeItem('apex_champ_go'); localStorage.removeItem('apex_champ_go_at'); }
+  } catch (e) {}
 })();
 // Última proteção: mesmo se uma etapa opcional acima não resolver, o menu aparece.
 setTimeout(() => {
@@ -6971,12 +6990,23 @@ function chGo() {
   const c = chLoad(); if (!c || c.round >= CH_CAL.length) return;
   selectedTeam = c.team; cfgSave();
   const ti = CH_CAL[c.round];
-  try { localStorage.setItem('apex_champ_go', '1'); localStorage.setItem('apex_track', String(ti)); } catch (e) {}
+  try { localStorage.setItem('apex_champ_go', '1'); localStorage.setItem('apex_champ_go_at', String(Date.now())); localStorage.setItem('apex_track', String(ti)); } catch (e) {}
   if (ti !== TRACK_IDX) { location.reload(); return; }
   chStartWeekend();
 }
 function chStartWeekend() {
-  try { localStorage.removeItem('apex_champ_go'); } catch (e) {}
+  let freshRequest = false;
+  try {
+    const issuedAt = Number(localStorage.getItem('apex_champ_go_at') || 0);
+    const age = Date.now() - issuedAt;
+    freshRequest = localStorage.getItem('apex_champ_go') === '1' && issuedAt > 0 && age >= 0 && age < 30000;
+    localStorage.removeItem('apex_champ_go'); localStorage.removeItem('apex_champ_go_at');
+  } catch (e) {}
+  const c = chLoad();
+  if (!freshRequest || !c || c.round >= CH_CAL.length || CH_CAL[c.round] !== TRACK_IDX) {
+    console.info('[Apex Rush] Retomada automática ignorada; menu preservado.');
+    return;
+  }
   window._champRace = true; apx.champBack = false;
   apxStart('quali');
 }
