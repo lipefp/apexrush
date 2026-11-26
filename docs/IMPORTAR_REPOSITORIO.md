@@ -1,5 +1,7 @@
 # Importar o histórico completo para o GitHub
 
+> **Atenção à visibilidade:** no momento da conferência, `lipefp/apexrush` está público. Ao publicar o histórico completo, o código do jogo ficará visível publicamente. Se a intenção for manter o projeto fechado até o lançamento, altere a visibilidade do repositório para privado no GitHub antes de executar o script.
+
 O GitHub `lipefp/apexrush` foi criado com um commit inicial contendo apenas um README mínimo. O pacote local possui o histórico reconstruído dos snapshots disponíveis (V8 a V20), duas branches (`main` e `develop`) e tags de versão.
 
 ## Caminho recomendado
