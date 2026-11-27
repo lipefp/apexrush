@@ -2,6 +2,49 @@
 
 O histórico completo dos snapshots disponíveis está em [`docs/VERSION_HISTORY.md`](docs/VERSION_HISTORY.md). Cada versão arquivada possui uma tag Git e seu próprio `index.html`.
 
+## [38.0.0] — 2026-11-27
+
+### Adicionado
+- Câmbio automático de 8 marchas com intervenção manual (`Q` sobe, `E` reduz), blip de acelerador na redução e freio-motor.
+- Faixa colorida do composto em cada roda, que perde intensidade com o desgaste.
+- Discos de freio que brilham com a temperatura; marcas e fumaça de travamento nas rodas dianteiras com ABS desligado.
+- Flexão visual de cada pneu em curva, frenagem e zebra (só visual; não altera aderência).
+- Escolha do composto no painel do pit stop.
+
+### Alterado
+- Safety car encerra quando o incidente está limpo e o pelotão formou fila; só carro parado no asfalto ou na zebra aciona.
+- Perfis de relevo suavizados para evitar rampas fortes.
+- Controles: `Espaço` boost, `F` DRS, `Z` mapa do motor, `X` box, `V` telemetria.
+
+### Removido
+- Voz do engenheiro e painel de rádio.
+
+## [29.0.0]
+
+### Adicionado
+- Faixas de escape pintadas em verde e branco nas zonas de curva.
+- Detalhes do carro: inserções de carbono nos sidepods, filete na asa dianteira, porca central, furos do disco e parafusos do aro.
+
+## [26.0.0]
+
+### Corrigido
+- A IA só defende a posição quando está emparelhada com o jogador; antes abandonava a linha com o jogador ainda no vácuo.
+- Removida a rotina que empurrava a IA para fora da trajetória quando o jogador vinha mais rápido.
+
+## [24.0.0]
+
+### Corrigido
+- Menus antigos ficam disponíveis como reserva se o menu Apex não iniciar.
+- Detecção de muro da IA usa a posição lateral do jogador na pista.
+- Safety car não fica preso quando não há mais líder na pista.
+
+## [21.0.0]
+
+### Corrigido
+- Remapeamento de teclas passa a valer na corrida (entrada unificada por `keyAction`).
+- A tecla `R` não reinicia mais a corrida durante a captura de remapeamento.
+- Instrução do pit stop corrigida para 80 km/h.
+
 ## [20.0.0] — 2026-11-26
 
 ### Adicionado

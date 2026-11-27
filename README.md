@@ -6,13 +6,14 @@ Jogo de corrida de Fórmula 1 em 3D que roda no navegador, feito com HTML, CSS, 
 
 ![Menu do Apex Rush](docs/images/menu.jpg)
 
-**Versão atual:** V20 (Stability Edition). O jogo está em desenvolvimento e homologação; ainda não é uma release final.
+**Versão atual:** V38 (Flexão dos Pneus e Dinâmica Visual). O jogo está em desenvolvimento e homologação; ainda não é uma release final.
 
 ## Recursos
 
 - Corrida contra 11 carros controlados pela IA, com classificação (Q1, Q2 e Q3) definindo o grid.
 - Dez circuitos: dois fictícios e oito com traçado real (Xangai, Interlagos, Monza, Spa-Francorchamps, Silverstone, Red Bull Ring, Zandvoort e Montreal).
-- Pneus macio, médio, duro, intermediário e de chuva, com desgaste e temperatura.
+- Pneus macio, médio, duro, intermediário e de chuva, com desgaste, temperatura e faixa colorida do composto na roda.
+- Câmbio automático de 8 marchas com troca manual, discos de freio que esquentam e marcas de travamento.
 - Pit stop com pitlane, limitador de velocidade e equipe de box animada.
 - DRS, ERS, dano na asa dianteira, safety car e clima variável.
 - Câmeras de perseguição, T-cam e cockpit, com HUD configurável por câmera.
@@ -24,16 +25,22 @@ Jogo de corrida de Fórmula 1 em 3D que roda no navegador, feito com HTML, CSS, 
 | Ação | Teclas |
 |---|---|
 | Acelerar | `W` ou `↑` |
-| Frear | `S` ou `↓` |
+| Frear e ré | `S` ou `↓` |
 | Esterçar | `A` / `D` ou `←` / `→` |
-| ERS (energia extra) | `Espaço` ou `E` |
-| DRS | `F` ou `Q` |
+| Subir / reduzir marcha | `Q` / `E` (câmbio automático com intervenção manual) |
+| Boost (segurar) | `Espaço` |
+| DRS | `F` |
+| Mapa do motor (MGU-K) | `Z` |
+| Chamar o box | `X` |
 | Câmera | `C` |
-| Pausa | `P` ou `Esc` |
-| Reiniciar corrida | `R` |
-| Som liga/desliga | `M` |
+| Telemetria | `V` |
 | Freio de mão | `Shift` |
+| Pausa | `P` |
+| Som liga/desliga | `M` |
+| Iniciar / reiniciar corrida (menu e resultado) | `R` ou `Enter` |
 | Monitor técnico | `F10` |
+
+As teclas podem ser trocadas em Configurações → Controles.
 
 Também aceita gamepad e controles por toque.
 
@@ -50,7 +57,7 @@ Depois abra `http://localhost:8080`.
 ## Organização
 
 ```text
-index.html             Jogo completo (V20)
+index.html             Jogo completo (V38)
 assets/                Modelos, áudio e texturas extraídos no futuro
 docs/                  Histórico de versões, auditoria, processo e plano de deploy
 deploy/                Preparação para hospedagem
@@ -71,7 +78,7 @@ A checagem cobre sintaxe JavaScript. Física, áudio, WebGL e desempenho são te
 
 ## Estado e problemas conhecidos
 
-Os problemas abertos estão nas [Issues](https://github.com/lipefp/apexrush/issues). A análise completa da V20 está em [`docs/AUDITORIA_V20.md`](docs/AUDITORIA_V20.md) e [`docs/REVISAO_INDEPENDENTE_V20.md`](docs/REVISAO_INDEPENDENTE_V20.md).
+Os problemas abertos estão nas [Issues](https://github.com/lipefp/apexrush/issues). A auditoria da V20, que originou as correções da V21 e da V24, está em [`docs/AUDITORIA_V20.md`](docs/AUDITORIA_V20.md) e [`docs/REVISAO_INDEPENDENTE_V20.md`](docs/REVISAO_INDEPENDENTE_V20.md).
 
 ## Fluxo de desenvolvimento
 
