@@ -2145,19 +2145,20 @@ const COMP_RADIO = ['macio', 'médio', 'duro', 'intermediário', 'de chuva'];
 function engStrategy() {
   const p = player; if (raceMode !== 'race' || QUALI.active || p.finished) return;
   const done = p.lap - 1, left = LAPS - done;
-  if (p._wPrev != null && p.wear < p._wPrev - 0.25) { p.stintLap = done - 1; p.stratSaid = ''; }   // pneu novo
-  p._wPrev = p.wear;
+  const worstWear = getWorstTireWear4();
+  if (p._wPrev != null && worstWear < p._wPrev - 0.25) { p.stintLap = done - 1; p.stratSaid = ''; }   // jogo novo de pneus
+  p._wPrev = worstWear;
   const inStint = done - (p.stintLap || 0);
   if (inStint < 1 || left < 1) return;
-  const wpl = p.wear / inStint, proj = p.wear + wpl * left;
-  if (proj < 0.72) { if (p.stratSaid !== 'fim') { p.stratSaid = 'fim'; radio('Estratégia: os pneus aguentam até o fim. Sem paradas.', 'strat', 4); } return; }
-  const toCliff = (0.62 - p.wear) / Math.max(wpl, 1e-4);
+  const wpl = worstWear / inStint, proj = worstWear + wpl * left;
+  if (proj < 0.72) { if (p.stratSaid !== 'fim') { p.stratSaid = 'fim'; radio('Estratégia: o pneu mais desgastado deve aguentar até o fim. Sem paradas.', 'strat', 4); } return; }
+  const toCliff = (0.62 - worstWear) / Math.max(wpl, 1e-4);
   const stopIn = Math.max(0, Math.floor(toCliff)), after = Math.max(1, left - stopIn);
   // composto: o mais macio que aguenta até o fim do próximo stint
   let pick = 2;
   if (wet) pick = rainNow() > 0.6 ? 4 : 3;
   else for (const c of [0, 1, 2]) { if (wpl * (tyreRate(c) / tyreRate(p.comp)) * after < 0.6) { pick = c; break; } }
-  if (stopIn <= 0 || p.wear > 0.6) {
+  if (stopIn <= 0 || worstWear > 0.6) {
     if (p.stratSaid !== 'box' + done) { p.stratSaid = 'box' + done; radio('Box, box. Pare nesta volta, pneu ' + COMP_RADIO[pick] + '.', 'strat', 2); }
   } else if (p.stratSaid !== 'plano' + (p.lap + stopIn)) {
     p.stratSaid = 'plano' + (p.lap + stopIn);
@@ -2416,6 +2417,8 @@ function placeAI(a) {
 // resetRace() é executada durante a inicialização principal, antes do bloco de telemetria.
 let brakeTemp = 0;
 const tireTemp4 = [0, 0, 0, 0];
+// Desgaste individual: FL, FR, RL, RR. player.wear continua sendo a média para compatibilidade com o HUD.
+const tireWear4 = [0, 0, 0, 0];
 
 // Reinicia todo o estado da corrida. Nenhum objeto 3D, listener ou nó de áudio é recriado aqui.
 function resetRace() {
@@ -2452,7 +2455,7 @@ function resetRace() {
   p._throttleFiltered = 0; p._brakeFiltered = 0; brakeTemp = 0; tireTemp4.fill(65); p.idx = nearestIndex(p.x, p.z);
   p.dist = pd; p.s = mod(pd, L); p.lat = pl; p.lap = 0; p.cp = NSEC - 1; p.offroad = p.kerb = false; p.hitCd = 0;
   p.finished = false; p.finishTime = 0; p.ers = 1; p.boost = false; p.slip = 0; p.drs = p.drsElig = p.drsZone = false;
-  p.comp = tyreIdx; resetDamage(p); p.wear = 0; p.stintLap = 0; p.stratSaid = ''; p._wPrev = null; p.pitT = 0; p.inBox = false; p.w55 = p.w80 = false; p.tyreTemp = 0.35;
+  p.comp = tyreIdx; resetDamage(p); p.wear = 0; tireWear4.fill(0); p.stintLap = 0; p.stratSaid = ''; p._wPrev = null; p.pitT = 0; p.inBox = false; p.w55 = p.w80 = false; p.tyreTemp = 0.35;
   lastPos = pk + 1; radioT = 0; radioQ.length = 0; radioCd = {}; $('radio').classList.add('hidden');
   $('tComp').style.color = TYRE[p.comp].col;
   const sk = DIFF[diffIdx];
@@ -3019,6 +3022,20 @@ function wheelTempGripC(tempC) {
   if (t <= 105) return 1;
   return 1 - 0.0032 * Math.min(25, t - 105);
 }
+function averageTireWear4() {
+  return tireWear4.reduce((sum, value) => sum + clamp(Number(value) || 0, 0, 1), 0) / 4;
+}
+function getWorstTireWear4() {
+  return Math.max(0, ...tireWear4.map(value => clamp(Number(value) || 0, 0, 1)));
+}
+function wheelWearGrip(wear) {
+  return 1 - 0.35 * Math.pow(clamp(Number(wear) || 0, 0, 1), 1.4);
+}
+// Mantém a aderência média já existente e aplica somente a diferença real entre os pneus de cada eixo.
+function axleWearGrip(a, b) {
+  const baseline = Math.max(0.5, wheelWearGrip(averageTireWear4()));
+  return ((wheelWearGrip(tireWear4[a]) + wheelWearGrip(tireWear4[b])) * 0.5) / baseline;
+}
 
 // ---------------------------------------------------------------- Física do jogador
 function stepPlayer(dt, thr, brk, steerIn, hb, ersReq) {
@@ -3058,8 +3075,8 @@ function stepPlayer(dt, thr, brk, steerIn, hb, ersReq) {
   // FL/FR influenciam a frente; RL/RR influenciam a traseira.
   const frontTempGrip = (wheelTempGripC(tireTemp4[0]) + wheelTempGripC(tireTemp4[1])) * 0.5;
   const rearTempGrip = (wheelTempGripC(tireTemp4[2]) + wheelTempGripC(tireTemp4[3])) * 0.5;
-  gripFront *= frontTempGrip;
-  gripRear *= rearTempGrip;
+  gripFront *= frontTempGrip * axleWearGrip(0, 1);
+  gripRear *= rearTempGrip * axleWearGrip(2, 3);
   // Sem ABS, a frente perde capacidade lateral quando os pneus começam a travar.
   if (!wheelSt.abs) gripFront *= 1 - brake * 0.18;
   // Acelerar cedo em curva descarrega a frente e aumenta gradualmente o subesterço.
@@ -3165,9 +3182,23 @@ function stepPlayer(dt, thr, brk, steerIn, hb, ersReq) {
   p.x += p.vx * dt; p.z += p.vz * dt;
   p.vf = vf; p.vl = vl;
   if (p.hitCd > 0) p.hitCd -= dt;
-  // desgaste: rodar, derrapar, zebra, freio de mão e grama gastam o pneu
-  if (started && !p.finished) p.wear = Math.min(1, p.wear + tyreRate(p.comp) * dt * setupWear() *
-    (0.005 * sp / VMAX + 0.0009 * Math.abs(vl) + (p.kerb ? 0.006 : 0) + (hb && sp > 8 ? 0.012 : 0) + (p.offroad && sp > 8 ? 0.003 : 0)));
+  // Desgaste por roda: curvas castigam o lado externo, frenagem a dianteira e tração a traseira.
+  // Derrapagem, zebras, freio de mão e grama aumentam a degradação total.
+  if (started && !p.finished) {
+    const baseWearStep = tyreRate(p.comp) * dt * setupWear() *
+      (0.005 * sp / VMAX + 0.0009 * Math.abs(vl) + (p.kerb ? 0.006 : 0) + (hb && sp > 8 ? 0.012 : 0) + (p.offroad && sp > 8 ? 0.003 : 0));
+    const lateralLoad = clamp(Math.abs(Number(gLat) || 0) / 3.2, 0, 1);
+    const outsideSide = (Number(gLat) || 0) >= 0 ? 0 : 1;
+    for (let wi = 0; wi < 4; wi++) {
+      const isFront = wi < 2;
+      const isOutside = (wi % 2) === outsideSide;
+      const cornerFactor = isOutside ? 1 + 0.28 * lateralLoad : 1 - 0.07 * lateralLoad;
+      const axleFactor = isFront ? 1 + 0.25 * brake : 1 + 0.22 * throttle;
+      const abuseFactor = 1 + (p.kerb ? 0.035 : 0) + (p.offroad && sp > 8 ? 0.08 : 0) + (hb && sp > 8 ? 0.12 : 0);
+      tireWear4[wi] = clamp(tireWear4[wi] + baseWearStep * cornerFactor * axleFactor * abuseFactor, 0, 1);
+    }
+    p.wear = averageTireWear4();
+  }
   // temperatura: aquece gradualmente com velocidade e deslizamento lateral; esfria devagar
   // alvo: ~0,7 (≈90 °C) andando forte; derrapagem e zebra passam do ponto; parado esfria até ~0,15 (≈50 °C)
   {
@@ -3620,7 +3651,7 @@ function simulate(dt) {
     if (pl.pitT <= 0) {
       // aplica o composto escolhido no overlay
       pl.comp = pitNextComp;
-      pl.wear = 0; pl.tyreTemp = 0.35; tireTemp4.fill(65); pl.w55 = pl.w80 = false;
+      pl.wear = 0; tireWear4.fill(0); pl.tyreTemp = 0.35; tireTemp4.fill(65); pl.w55 = pl.w80 = false;
       pl._pitDuration = 0;
       hudCache.tyrePct = ''; hudCache.ersPct = '';
       // Atualiza imediatamente as faixas do modelo 3D, não só o indicador do HUD.
@@ -3632,8 +3663,11 @@ function simulate(dt) {
     }
   }
   if (!fin) {
-    if (pl.wear > 0.55 && !pl.w55) { pl.w55 = true; radio('Pneus no limite. Se quiser, pare no box, na área amarela depois da largada.'); }
-    if (pl.wear > 0.8 && !pl.w80) { pl.w80 = true; radio('Box, box! Os pneus acabaram.'); }
+    const worstWear = getWorstTireWear4();
+    const wornNames = ['dianteiro esquerdo', 'dianteiro direito', 'traseiro esquerdo', 'traseiro direito'];
+    const worstIndex = tireWear4.indexOf(worstWear);
+    if (worstWear > 0.55 && !pl.w55) { pl.w55 = true; radio('Atenção: pneu ' + wornNames[Math.max(0, worstIndex)] + ' com desgaste elevado. Considere o box.'); }
+    if (worstWear > 0.8 && !pl.w80) { pl.w80 = true; radio('Box, box! ' + wornNames[Math.max(0, worstIndex)] + ' no limite.'); }
     for (const a of ais) {
       let g = pl.s - a.s; if (g < 0) g += L;
       if (a.dist - pl.dist > L - 60 && g < 45) radio('Bandeira azul: deixe ' + a.name + ' passar.', 'blue', 12);
@@ -4755,9 +4789,11 @@ function renderTelemPanel() {
   p.innerHTML = `
     <div style="text-align:center;font-weight:900;letter-spacing:.12em;color:#e10600;margin-bottom:14px">TELEMETRIA</div>
     <table style="width:100%;border-collapse:collapse;line-height:1.9">
-      <tr><td style="color:#666;width:46%">PNEU FL</td><td style="color:${tempColor(tireTemp4[0])}">${Math.round(tireTemp4[0])}°C</td><td style="color:#666">FR</td><td style="color:${tempColor(tireTemp4[1])}">${Math.round(tireTemp4[1])}°C</td></tr>
-      <tr><td style="color:#666">PNEU RL</td><td style="color:${tempColor(tireTemp4[2])}">${Math.round(tireTemp4[2])}°C</td><td style="color:#666">RR</td><td style="color:${tempColor(tireTemp4[3])}">${Math.round(tireTemp4[3])}°C</td></tr>
-      <tr><td style="color:#666">DESGASTE</td><td colspan="3" style="color:#ffd23a">${Math.round(player.wear * 100)}%</td></tr>
+      <tr><td style="color:#666;width:28%">FL</td><td style="color:${tempColor(tireTemp4[0])}">${Math.round(tireTemp4[0])}°C</td><td style="color:#666">VIDA</td><td style="color:#d7e1f1">${Math.round((1 - tireWear4[0]) * 100)}%</td></tr>
+      <tr><td style="color:#666">FR</td><td style="color:${tempColor(tireTemp4[1])}">${Math.round(tireTemp4[1])}°C</td><td style="color:#666">VIDA</td><td style="color:#d7e1f1">${Math.round((1 - tireWear4[1]) * 100)}%</td></tr>
+      <tr><td style="color:#666">RL</td><td style="color:${tempColor(tireTemp4[2])}">${Math.round(tireTemp4[2])}°C</td><td style="color:#666">VIDA</td><td style="color:#d7e1f1">${Math.round((1 - tireWear4[2]) * 100)}%</td></tr>
+      <tr><td style="color:#666">RR</td><td style="color:${tempColor(tireTemp4[3])}">${Math.round(tireTemp4[3])}°C</td><td style="color:#666">VIDA</td><td style="color:#d7e1f1">${Math.round((1 - tireWear4[3]) * 100)}%</td></tr>
+      <tr><td style="color:#666">MÉDIA / PIOR</td><td colspan="3" style="color:#ffd23a">${Math.round(player.wear * 100)}% / ${Math.round(getWorstTireWear4() * 100)}% gastos</td></tr>
       <tr><td style="color:#666">FREIOS</td><td colspan="3" style="color:${btc}">${Math.round(brakeTemp)}°C</td></tr>
       <tr><td style="color:#666">BRAKE BIAS</td><td colspan="3" style="color:#c5cbd6">${bf} diant.</td></tr>
       <tr><td style="color:#666">MGU-K</td><td colspan="3" style="color:${em.col}">${em.label}</td></tr>
@@ -5665,7 +5701,7 @@ function drawApexScreen(car) {
   const pos = player.finished ? finalPos : Math.max(1, st.indexOf(player) + 1);
   const speed = Math.round(Math.hypot(player.vx || 0, player.vz || 0) * 3.6);
   const ers = clamp(Math.round((Number(player.ers) || 0) * 100), 0, 100);
-  const wear = clamp(Math.round((1 - (Number(player.wear) || 0)) * 100), 0, 100);
+  const wear = clamp(Math.round((1 - getWorstTireWear4()) * 100), 0, 100);
   const tyre = TYRE[player.comp] || TYRE[1];
   const brake = clamp(Math.round(Number(brakeTemp) || 0), 0, 1000);
   const bias = clamp(Math.round(Number(brakeBias) || 56), 45, 60);
@@ -8110,10 +8146,11 @@ setInterval(() => {
   const tgt = [base + Math.max(0, lat) * 3 + Math.max(0, -lon) * 2.5, base + Math.max(0, -lat) * 3 + Math.max(0, -lon) * 2.5,
     base + Math.max(0, lat) * 2.5 + Math.max(0, lon) * 3, base + Math.max(0, -lat) * 2.5 + Math.max(0, lon) * 3];
   for (let k = 0; k < 4; k++) _tyT[k] += (tgt[k] - _tyT[k]) * 0.25;
-  const life = Math.round((1 - player.wear) * 100), names = ['FL', 'FR', 'RL', 'RR'];
-  tyrePanel.innerHTML = `<div class="tt"><span>Pneus · ${COMP_N[player.comp]}</span><span>${life}%</span></div><div class="tg">` +
-    _tyT.map((c, k) => { const psi = (SETUP.tp + (c - 90) * 0.035).toFixed(1);
-      return `<div class="ty"${k % 2 ? ' style="flex-direction:row-reverse;text-align:right"' : ''}><i style="background:${tyreHeatCol(c)}"></i><div>${names[k]}<b>${Math.round(c)}°C</b>${psi} psi</div></div>`; }).join('') + '</div>';
+  const life = Math.round((1 - player.wear) * 100), worstLife = Math.round((1 - getWorstTireWear4()) * 100), names = ['FL', 'FR', 'RL', 'RR'];
+  tyrePanel.innerHTML = `<div class="tt"><span>Pneus · ${COMP_N[player.comp]}</span><span>${life}% méd. · mín. ${worstLife}%</span></div><div class="tg">` +
+    _tyT.map((c, k) => { const psi = (SETUP.tp + (c - 90) * 0.035).toFixed(1), wheelLife = Math.round((1 - tireWear4[k]) * 100);
+      const lifeColor = wheelLife < 20 ? '#ff554d' : wheelLife < 45 ? '#ffd23a' : '#b8c8dc';
+      return `<div class="ty"${k % 2 ? ' style="flex-direction:row-reverse;text-align:right"' : ''}><i style="background:${tyreHeatCol(c)}"></i><div>${names[k]}<b>${Math.round(c)}°C</b>${psi} psi<small style="display:block;color:${lifeColor};font:700 9px Inter,sans-serif">VIDA ${wheelLife}%</small></div></div>`; }).join('') + '</div>';
 }, 150);
 // ================================================================
 // PITLANE: asfalto, faixas, muro com tela, boxes e garagens das equipes
