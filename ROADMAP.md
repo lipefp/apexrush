@@ -9,6 +9,16 @@
 
 # Roadmap do Apex Rush
 
+## Direção do desenvolvimento
+
+Manter a dirigibilidade consolidada, com melhorias incrementais nos sistemas existentes. Mudanças grandes de arquitetura ficam separadas em versões principais.
+
+## Próximas versões (já desenvolvidas, aguardando arquivo no repositório)
+
+- V39: temperatura individual dos quatro pneus, com efeito na aderência de cada eixo e na telemetria.
+- V40: desgaste individual dos quatro pneus, com estratégia de parada pelo pneu mais gasto.
+- V41: estratégia da IA com perfis agressivo, equilibrado e conservador, reação a undercut e overcut e parada antecipada sob safety car.
+
 ## Fase A — Estabilização funcional
 
 - [ ] Pneus e rodas permanecem visíveis em todas as câmeras, velocidades, curvas e condições de pista.

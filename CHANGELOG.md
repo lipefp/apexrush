@@ -2,22 +2,41 @@
 
 O histórico completo dos snapshots disponíveis está em [`docs/VERSION_HISTORY.md`](docs/VERSION_HISTORY.md). Cada versão arquivada possui uma tag Git e seu próprio `index.html`.
 
-## [38.0.0] — 2026-11-27
+## [38.0.0] — 2026-11-27 · Deformação dos pneus
 
-### Adicionado
-- Câmbio automático de 8 marchas com intervenção manual (`Q` sobe, `E` reduz), blip de acelerador na redução e freio-motor.
-- Faixa colorida do composto em cada roda, que perde intensidade com o desgaste.
-- Discos de freio que brilham com a temperatura; marcas e fumaça de travamento nas rodas dianteiras com ABS desligado.
-- Flexão visual de cada pneu em curva, frenagem e zebra (só visual; não altera aderência).
-- Escolha do composto no painel do pit stop.
+O arquivo da V38 é o primeiro preservado depois da V29. Ele reúne as mudanças das versões V30 a V37, listadas abaixo pela versão em que entraram.
 
-### Alterado
-- Safety car encerra quando o incidente está limpo e o pelotão formou fila; só carro parado no asfalto ou na zebra aciona.
-- Perfis de relevo suavizados para evitar rampas fortes.
-- Controles: `Espaço` boost, `F` DRS, `Z` mapa do motor, `X` box, `V` telemetria.
+### V38 — Deformação dos pneus
+- Deformação visual dos pneus em curva, frenagem, aceleração, zebras e derrapagens, sem efeito direto na física.
 
-### Removido
-- Voz do engenheiro e painel de rádio.
+### V37 — Safety car e pneus
+- Revisão do ciclo do safety car: agrupamento do pelotão e retorno à bandeira verde quando o incidente está limpo.
+- Só carro parado no asfalto ou na zebra aciona o safety car.
+- Aparência do composto sincronizada após a troca nos boxes; escolha do composto no painel do pit.
+
+### V36 — Dinâmica visual de frenagem
+- Mergulho da dianteira, compressão da suspensão dianteira e alívio da traseira na frenagem.
+- Marcas de travamento e fumaça nas rodas dianteiras com ABS desligado.
+
+### V35 — Temperatura dos freios
+- Discos de freio com brilho conforme a temperatura, resfriamento gradual e diferença entre os eixos.
+
+### V34 — Identidade visual dos pneus
+- Faixa lateral colorida por composto (macio, médio, duro, intermediário e chuva), sincronizada entre jogador e IA e desbotando com o desgaste.
+
+### V33 — Pilotagem e pistas
+- Relevo das pistas suavizado para reduzir ondulações e rampas fortes.
+- Ajustes no câmbio automático, preservando a direção já aprovada.
+
+### V32 — Rev matching
+- Blip de acelerador nas reduções válidas e som do motor ajustado à marcha e à rotação.
+
+### V31 — Controles e áudio
+- Controles reorganizados: WASD para pilotar, `Q` sobe e `E` reduz marcha, `Espaço` boost, `F` DRS, `Z` mapa do motor, `X` box, `V` telemetria.
+- Voz do locutor e painel de rádio removidos.
+
+### V30 — Câmbio sequencial
+- Câmbio sequencial de 8 marchas, automático por padrão, com intervenção manual e freio-motor.
 
 ## [29.0.0]
 
