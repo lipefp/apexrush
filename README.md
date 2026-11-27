@@ -6,13 +6,13 @@ Jogo de corrida de Fórmula 1 em 3D que roda no navegador, feito com HTML, CSS, 
 
 ![Menu do Apex Rush](docs/images/menu.jpg)
 
-**Versão atual:** V38 (Flexão dos Pneus e Dinâmica Visual). O jogo está em desenvolvimento e homologação; ainda não é uma release final.
+**Versão atual:** V40 (Desgaste individual dos pneus). O jogo está em desenvolvimento e homologação; ainda não é uma release final.
 
 ## Recursos
 
 - Corrida contra 11 carros controlados pela IA, com classificação (Q1, Q2 e Q3) definindo o grid.
 - Dez circuitos: dois fictícios e oito com traçado real (Xangai, Interlagos, Monza, Spa-Francorchamps, Silverstone, Red Bull Ring, Zandvoort e Montreal).
-- Pneus macio, médio, duro, intermediário e de chuva, com desgaste, temperatura e faixa colorida do composto na roda.
+- Pneus macio, médio, duro, intermediário e de chuva, com temperatura e desgaste individuais em cada uma das quatro rodas e faixa colorida do composto.
 - Câmbio automático de 8 marchas com troca manual, discos de freio que esquentam e marcas de travamento.
 - Pit stop com pitlane, limitador de velocidade e equipe de box animada.
 - DRS, ERS, dano na asa dianteira, safety car e clima variável.
@@ -57,7 +57,7 @@ Depois abra `http://localhost:8080`.
 ## Organização
 
 ```text
-index.html             Jogo completo (V38)
+index.html             Jogo completo (V40)
 assets/                Modelos, áudio e texturas extraídos no futuro
 docs/                  Histórico de versões, auditoria, processo e plano de deploy
 deploy/                Preparação para hospedagem

@@ -2,6 +2,18 @@
 
 O histórico completo dos snapshots disponíveis está em [`docs/VERSION_HISTORY.md`](docs/VERSION_HISTORY.md). Cada versão arquivada possui uma tag Git e seu próprio `index.html`.
 
+## [40.0.0] — 2026-11-27 · Desgaste individual dos pneus
+
+- Desgaste independente para dianteiro esquerdo, dianteiro direito, traseiro esquerdo e traseiro direito: curvas castigam o lado externo, frenagem a dianteira e tração a traseira.
+- Aderência calculada pela condição de cada pneu; indicador de vida útil e alerta do pneu mais gasto.
+- Estratégia de parada considera o pior pneu, não a média.
+
+## [39.0.0] — 2026-11-27 · Temperatura individual dos pneus
+
+- Temperatura independente nos quatro pneus, conforme posição e carga de cada roda.
+- Aquecimento diferente em curva, frenagem e aceleração; a temperatura influencia a aderência de cada eixo.
+- Integração com telemetria e alertas.
+
 ## [38.0.0] — 2026-11-27 · Deformação dos pneus
 
 O arquivo da V38 é o primeiro preservado depois da V29. Ele reúne as mudanças das versões V30 a V37, listadas abaixo pela versão em que entraram.

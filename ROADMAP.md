@@ -15,8 +15,6 @@ Manter a dirigibilidade consolidada, com melhorias incrementais nos sistemas exi
 
 ## Próximas versões (já desenvolvidas, aguardando arquivo no repositório)
 
-- V39: temperatura individual dos quatro pneus, com efeito na aderência de cada eixo e na telemetria.
-- V40: desgaste individual dos quatro pneus, com estratégia de parada pelo pneu mais gasto.
 - V41: estratégia da IA com perfis agressivo, equilibrado e conservador, reação a undercut e overcut e parada antecipada sob safety car.
 
 ## Fase A — Estabilização funcional

@@ -23,6 +23,8 @@ Este repositório contém os arquivos HTML reais de cada versão. Cada tag apont
 | `v26.0.0` | Defesa da IA contra o jogador só quando emparelhada |
 | `v29.0.0` | Faixas de escape e detalhes do carro e das rodas |
 | `v38.0.0` | Deformação dos pneus; inclui V30 (câmbio sequencial), V31 (controles), V32 (rev matching), V33 (relevo suavizado), V34 (faixa do composto), V35 (temperatura dos freios), V36 (frenagem visual) e V37 (safety car) |
+| `v39.0.0` | Temperatura individual dos quatro pneus com aderência por eixo |
+| `v40.0.0` | Desgaste individual dos quatro pneus e estratégia pelo pneu mais gasto |
 
 As descrições resumem cada versão. Para verificar uma implementação, compare o código de duas tags. A V11.0.0 está arquivada como snapshot histórico; a V11.1.0 é o hotfix posterior.
 
