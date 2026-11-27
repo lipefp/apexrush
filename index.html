@@ -252,7 +252,8 @@
   #wheelKeys b{color:#d2cefd;font-weight:800}
 
   /* ===== Apex Rush: menus do handoff (Nocturne) ===== */
-  #title,#teamSelect,#garage,#finish{display:none!important}
+  /* Mantém os menus legados como fallback caso o menu Apex não inicialize. */
+  body.apxOn #title,body.apxOn #teamSelect,body.apxOn #garage,body.apxOn #finish{display:none!important}
   #apx{position:fixed;inset:0;z-index:20;pointer-events:none;font-family:Inter,system-ui,sans-serif;color:#e9e9ed;font-weight:400}
   #apx.hidden{display:none}
   body.apxOn #hud,body.apxOn #map,body.apxOn #tower,body.apxOn #dash,body.apxOn #radio,body.apxOn #wheelKeys,body.apxOn #msg,body.apxOn #cockpitHud,body.apxOn #gfHud,body.apxOn #altGraph,body.apxOn #ghostDeltaHud{display:none!important}
@@ -3293,9 +3294,10 @@ function collidePlayerAI(a) {
   }
   if (best <= 0) return;
 
-  // Calcula posição lateral do jogador para detectar proximidade de parede
-  const playerLat = p.x * (a.nx || 0) + p.z * (a.nz || 0);
-  const nearWall = Math.abs(playerLat) > HW - 2.0;
+  // Usa a coordenada lateral da pista já calculada para o jogador.
+  // Projetar x/z absolutos na normal da IA inclui a posição do centro da pista
+  // e pode marcar parede mesmo quando o jogador está no meio do traçado.
+  const nearWall = Math.abs(p.lat) > HW - 2.0;
 
   // Velocidade relativa: positivo = jogador mais rápido que IA
   const pSpeed = Math.hypot(p.vx, p.vz);
@@ -4610,6 +4612,9 @@ function resetSC() { SC.active = SC.out = false; SC.used = 0; SC.pen = 0; scCar.
 function stepSC(dt) {
   if (!SC.active) return;
   const ld = leaderR();
+  // Se todos os pilotos terminaram (ou não há mais carros ativos), encerra o SC.
+  // Sem esta guarda, SC.out podia continuar avançando sem um líder para liberar a pista.
+  if (!ld) { retractSC(); return; }
   if (SC.out) {
     const gapL = ld ? SC.dist - ld.dist : 999;
     SC.dist += (gapL > 160 ? SC_V * 0.65 : SC_V) * dt;        // espera o pelotão encostar
