@@ -3138,27 +3138,18 @@ function stepAI(a, dt) {
     let gap = o.s - s; if (gap > L / 2) gap -= L; else if (gap < -L / 2) gap += L;
     const dl = o.lat - a.lat, adl = Math.abs(dl);
 
-    // Defesa unificada: uma única decisão para evitar comandos laterais conflitantes.
-    if (o === player && a.err <= 0 && gap < 0 && gap > -30) {
-      const pSpeed = Math.hypot(player.vx, player.vz);
-      const speedDiff = pSpeed - a.v;
-      const overlap = Math.abs(gap) < 6 && adl < 3.0;
+    // Contra o jogador: só reserva espaço quando os carros realmente estão
+    // emparelhados. Um piloto chegando no vácuo (mesma faixa, mas ainda atrás)
+    // não deve fazer a IA abandonar a linha antes da disputa começar.
+    // A margem é pequena e entra pelo controlador lateral inercial.
+    if (o === player && a.err <= 0 && Math.abs(gap) < 4.2 && adl < 2.35) {
       const playerSide = Math.sign(dl) || 1;
-      if (!overlap && speedDiff > 1.5) {
-        if (Math.abs(gap) < 20 && adl < 2.8 && speedDiff > 6) {
-          // Se o jogador chega muito mais rápido e já está próximo, abre espaço do lado oposto.
-          latT = clamp(latT - playerSide * 2.5, -LATMAX, LATMAX);
-          a.v *= 0.997;
-        } else {
-          // Fora do overlap, desloca o alvo 1,5 m na direção lateral do jogador.
-          latT = clamp(latT + playerSide * 1.5, -LATMAX, LATMAX);
-        }
-        defending = true;
-      } else if (!overlap && Math.abs(gap) < 20 && adl < 2.8) {
-        // Velocidades parecidas: mantém a posição sem guinadas bruscas.
-        latT = clamp(latT + playerSide * 2.0, -LATMAX, LATMAX);
-        defending = true;
+      const sideRoom = LATMAX - Math.abs(a.lat);
+      if (sideRoom > 1.0) {
+        const separationTarget = clamp(a.lat - playerSide * 0.38, -LATMAX, LATMAX);
+        latT += (separationTarget - latT) * 0.18;
       }
+      defending = true;
     }
 
     // Carro adversário atrás chegando perto: defesa separada da disputa com o jogador.
@@ -3254,30 +3245,9 @@ function separateAIs() {
       rear.dist -= (4.8 - Math.abs(gap)) * 0.5;
     }
   }
-  // Separação proativa: AIs próximas ao jogador cedem espaço
-  if (!player) return;
-  for (let m = 0; m < ais.length; m++) {
-    const a = ais[m];
-    let pgap = mod(player.dist, L) - mod(a.dist, L);
-    if (pgap > L / 2) pgap -= L; else if (pgap < -L / 2) pgap += L;
-    if (Math.abs(pgap) >= 5.5) continue; // só age quando AI está próxima longitudinalmente
-    // Calcula diferença lateral no sistema de coordenadas da pista
-    const dlat = (player.x - a.x) * a.nx + (player.z - a.z) * a.nz;
-    if (Math.abs(dlat) >= 2.5) continue; // já tem espaço lateral suficiente
-    // Só cede se o jogador vem mais rápido (como no F1 real)
-    const pSpeed = Math.hypot(player.vx, player.vz);
-    const speedDiff = pSpeed - a.v;
-    if (speedDiff < 2) continue; // velocidades similares: IA não cede proativamente
-    // Jogador mais rápido: empurra a IA para o lado oposto
-    const pushDir = dlat >= 0 ? -1 : 1;
-    const pushStrength = speedDiff > 6 ? 0.5 : 0.25; // cede mais se bem mais rápido
-    const pushAmt = (2.5 - Math.abs(dlat)) * pushStrength;
-    a.lat = clamp(a.lat + pushDir * pushAmt, -HW - 0.5, HW + 0.5);
-    // Se IA não tem para onde ir (está quase na borda), freia levemente para cair atrás
-    if (Math.abs(a.lat) > HW - 1.0) {
-      a.v *= 0.98;
-    }
-  }
+  // Não empurra a IA para fora da trajetória só porque o jogador está mais rápido.
+  // A prevenção de contato fica no planejamento de trajetória (stepAI); aqui só
+  // separam-se carros de IA entre si. O contato real com o jogador é tratado abaixo.
 }
 
 // Colisão jogador x IA: separa os dois, remove a velocidade de aproximação e ambos perdem velocidade
@@ -3294,41 +3264,36 @@ function collidePlayerAI(a) {
   }
   if (best <= 0) return;
 
-  // Usa a coordenada lateral da pista já calculada para o jogador.
-  // Projetar x/z absolutos na normal da IA inclui a posição do centro da pista
-  // e pode marcar parede mesmo quando o jogador está no meio do traçado.
-  const nearWall = Math.abs(p.lat) > HW - 2.0;
-
-  // Velocidade relativa: positivo = jogador mais rápido que IA
-  const pSpeed = Math.hypot(p.vx, p.vz);
-  const speedDiff = pSpeed - a.v;
-
-  // aiPush: quanto da separação vai para a IA (0=só o jogador se move, 1=só a IA se move)
-  // Base: 50/50. Se jogador mais rápido, IA cede mais. Se perto da parede, IA cede muito mais.
-  let aiPush = 0.5;
-  if (speedDiff > 6)       aiPush = 0.75; // jogador claramente mais rápido
-  else if (speedDiff > 2)  aiPush = 0.60; // jogador levemente mais rápido
-  else if (speedDiff < -4) aiPush = 0.38; // IA vem mais rápido, colisão culpa do jogador
-  if (nearWall)            aiPush = Math.max(aiPush, 0.82); // nunca esmaga na parede
+  // Correção de penetração gradual e equilibrada: contato lateral não deve
+  // arremessar a IA para fora nem deslocar o jogador de forma abrupta.
+  const nearWall = Math.abs(p.lat) > HW - 1.6;
+  let aiPush = nearWall ? 0.72 : 0.50;
   const pPush = 1 - aiPush;
-
-  p.x += bnx * best * pPush; p.z += bnz * best * pPush;
-  const ax = -bnx * best * aiPush, az = -bnz * best * aiPush;
+  const correction = Math.min(best * 0.72, 0.72);
+  p.x += bnx * correction * pPush; p.z += bnz * correction * pPush;
+  const ax = -bnx * correction * aiPush, az = -bnz * correction * aiPush;
   a.lat = clamp(a.lat + ax * a.nx + az * a.nz, -HW - 0.5, HW + 0.5);
   a.dist += ax * a.tx + az * a.tz;
 
-  // Perto da parede: IA freia para cair atrás e abrir espaço
-  if (nearWall) a.v *= 0.92;
-
-  const rv = (p.vx - a.tx * a.v) * bnx + (p.vz - a.tz * a.v) * bnz;
+  // Velocidade da IA no plano do mundo, para comparar os dois carros na mesma
+  // direção de contato (não apenas a velocidade escalar ao longo da pista).
+  const avx = a.tx * a.v, avz = a.tz * a.v;
+  const rv = (p.vx - avx) * bnx + (p.vz - avz) * bnz;
   if (rv < 0) {
-    p.vx -= bnx * rv * 1.1; p.vz -= bnz * rv * 1.1;
-    if (rv < -1.5 && p.hitCd <= 0) {
-      p.vx *= 0.9; p.vz *= 0.9; a.v *= 0.92; p.hitCd = 0.3; a.hitCd = 0.3;
-      addDamage(p, Math.min(0.3, -rv * 0.02), carSide(p, -bnx, -bnz));
-      addDamage(a, Math.min(0.3, -rv * 0.018), carSide(a, bnx, bnz));
-      audio.crash(-rv / 12);
-      spawnSparks((p.x + a.x) / 2, 0.45, (p.z + a.z) / 2, 10);
+    // Restituição baixa (0.12): absorve parte do impacto, preservando a sensação
+    // de massa. O impulso é dividido; contato raspando não vira freada brusca.
+    const impulse = -rv * 0.56;
+    p.vx += bnx * impulse * pPush; p.vz += bnz * impulse * pPush;
+    a.v -= impulse * aiPush * (bnx * a.tx + bnz * a.tz);
+    a.v = Math.max(0, a.v);
+    const impact = -rv;
+    if (impact > 5.0 && p.hitCd <= 0) {
+      p.hitCd = 0.42; a.hitCd = 0.42;
+      const severity = clamp((impact - 4.5) / 24, 0, 0.22);
+      addDamage(p, severity, carSide(p, -bnx, -bnz));
+      addDamage(a, severity * 0.72, carSide(a, bnx, bnz));
+      audio.crash(clamp(impact / 22, 0.12, 0.65));
+      if (impact > 8) spawnSparks((p.x + a.x) / 2, 0.38, (p.z + a.z) / 2, Math.min(7, Math.round(impact * 0.45)));
     }
   }
 }
