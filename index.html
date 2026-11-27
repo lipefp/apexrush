@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Apex Rush — V20 Stability Edition</title>
+<title>Apex Rush — V15 Focus HUD & Progressive Ride</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{width:100%;height:100%;overflow:hidden;background:#161826;color:#fff;
@@ -761,7 +761,7 @@
   <p>3 voltas contra 3 adversários. Termine no pódio.</p>
   <p><kbd>W</kbd>/<kbd>↑</kbd> acelera &nbsp; <kbd>S</kbd>/<kbd>↓</kbd> freia e ré &nbsp; <kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> direção &nbsp; <kbd>Espaço</kbd> freio de mão<br>
      <kbd>Espaço</kbd>/<kbd>E</kbd> ERS (segurar) &nbsp; <kbd>Shift</kbd> freio de mão &nbsp; <kbd>F</kbd>/<kbd>Q</kbd> DRS &nbsp; <kbd>C</kbd> câmera &nbsp; <kbd>R</kbd> reinicia &nbsp; <kbd>P</kbd>/<kbd>Esc</kbd> pausa</p>
-  <p>DRS a partir da volta 2, a menos de 1 s do carro da frente. Pneu gasto perde aderência: pare na área amarela do BOX, logo depois da largada, abaixo de 100 km/h. <kbd>M</kbd> liga e desliga o som.</p>
+  <p>DRS a partir da volta 2, a menos de 1 s do carro da frente. Pneu gasto perde aderência: pare na área amarela do BOX, logo depois da largada, abaixo de 80 km/h. <kbd>M</kbd> liga e desliga o som.</p>
   <div class="opts" id="optDiff"><span>Dificuldade</span><button data-v="0">Fácil</button><button data-v="1" class="sel">Normal</button><button data-v="2">Difícil</button></div>
   <div class="opts" id="optCam"><span>Câmera</span><button data-v="0">Perseguição</button><button data-v="1">T-cam</button><button data-v="2" class="sel">Cockpit</button></div>
   <div class="opts" id="optQ"><span>Gráficos</span><button data-v="0">Leve</button><button data-v="1">Alto (brilho e desfoque)</button><button data-v="2">Auto FPS</button></div>
@@ -2592,17 +2592,39 @@ function moveSteerToward(value, target, dt) {
 }
 
 window.addEventListener('keydown', e => {
-  const k = KEYMAP[e.code];
-  if (k) { e.preventDefault(); if (!(k === 'hb' && state !== ST.PLAYING)) keys[k] = true; }
+  // Os controles configuráveis são a fonte única para teclado e gameplay.
+  // keyAction é declarada mais abaixo, mas este callback só executa após o boot completo.
+  const action = typeof keyAction === 'function' ? keyAction(e.code) : null;
+  const inputKey = action === 'accel' ? 'gas' :
+    action === 'brake' ? 'brake' :
+    action === 'left' ? 'left' :
+    action === 'right' ? 'right' :
+    action === 'hb' ? 'hb' :
+    action === 'ers' ? 'ers' : null;
+  if (inputKey) {
+    e.preventDefault();
+    if (!(inputKey === 'hb' && state !== ST.PLAYING)) keys[inputKey] = true;
+  }
   if (e.repeat) return;
-  if (e.code === 'KeyR') startRace();
-  else if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
-  else if (e.code === 'KeyC') cycleCam();
+  if (action === 'drs') toggleDRS();
+  else if (action === 'cam') cycleCam();
+  else if (action === 'pause') togglePause();
+  else if (action === 'telem') { /* Telemetria é ativada enquanto a tecla configurada estiver pressionada. */ }
+  // R permanece como atalho rápido para iniciar a corrida no menu.
+  else if (!action && e.code === 'KeyR' && (state === ST.TITLE || state === ST.FINISHED)) startRace();
   else if (e.code === 'KeyM') audio.toggleMute();
-  else if (e.code === 'KeyF' || e.code === 'KeyQ') toggleDRS();
   else if (e.code === 'Enter' && (state === ST.TITLE || state === ST.FINISHED)) startRace();
 });
-window.addEventListener('keyup', e => { const k = KEYMAP[e.code]; if (k) keys[k] = false; });
+window.addEventListener('keyup', e => {
+  const action = typeof keyAction === 'function' ? keyAction(e.code) : null;
+  const inputKey = action === 'accel' ? 'gas' :
+    action === 'brake' ? 'brake' :
+    action === 'left' ? 'left' :
+    action === 'right' ? 'right' :
+    action === 'hb' ? 'hb' :
+    action === 'ers' ? 'ers' : null;
+  if (inputKey) keys[inputKey] = false;
+});
 window.addEventListener('blur', clearKeys);
 // o navegador só libera áudio depois de um gesto do usuário: qualquer clique ou tecla destrava
 window.addEventListener('pointerdown', () => audio.init());
@@ -4469,25 +4491,18 @@ function renderTelemPanel() {
 const ACTION_LABELS = {
   accel: 'Acelerar', brake: 'Frear', left: 'Esquerda', right: 'Direita',
   hb: 'Freio de mão', ers: 'ERS (segurar)', drs: 'DRS', cam: 'Câmera',
-  pause: 'Pausa', pit: 'Pit Stop (R)', map1: 'Motor Eco (1)', map2: 'Motor STD (2)', map3: 'Motor Push (3)',
-  biasL: 'Bias + traseiro ([)', biasR: 'Bias + dianteiro (])', telem: 'Telemetria (T)',
+  pause: 'Pausa', telem: 'Telemetria',
 };
 const DEFAULT_KEYS = {
   accel:  ['KeyW', 'ArrowUp'],
   brake:  ['KeyS', 'ArrowDown'],
   left:   ['KeyA', 'ArrowLeft'],
   right:  ['KeyD', 'ArrowRight'],
-  hb:     ['ShiftLeft', 'ShiftRight', 'Space'],
+  hb:     ['ShiftLeft', 'ShiftRight'],
   ers:    ['KeyE', 'Space'],
   drs:    ['KeyF', 'KeyQ'],
   cam:    ['KeyC'],
-  pause:  ['KeyP', 'Escape'],
-  pit:    ['KeyR'],
-  map1:   ['Digit1'],
-  map2:   ['Digit2'],
-  map3:   ['Digit3'],
-  biasL:  ['BracketLeft'],
-  biasR:  ['BracketRight'],
+  pause:  ['KeyP'],
   telem:  ['KeyT'],
 };
 // remapKeys: { action -> Set de codes }
@@ -4524,13 +4539,24 @@ function buildRemapTable() {
 }
 document.addEventListener('keydown', e => {
   if (!remapWaiting) return;
+  // O evento é consumido aqui para não acionar corrida, pausa ou qualquer outro atalho.
   e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+  if (e.code === 'Escape') {
+    const { btn } = remapWaiting;
+    remapWaiting = null;
+    btn.classList.remove('waiting');
+    buildRemapTable();
+    return;
+  }
   const { action, btn } = remapWaiting;
   remapWaiting = null;
   btn.classList.remove('waiting');
+  for (const set of Object.values(remapKeys)) set.delete(e.code);
   remapKeys[action].clear();
   remapKeys[action].add(e.code);
-  btn.textContent = e.code.replace('Key','').replace('Digit','').replace('Arrow','').replace('Shift','⇧').replace('Space','Espaço').replace('Escape','Esc');
+  buildRemapTable();
 }, { capture: true });
 
 // ---------------------------------------------------------------- SAFETY CAR
@@ -5839,7 +5865,7 @@ _extrasFrameFn = function(dt) {
   }
 
   // Telemetria: exibir/ocultar (tecla T)
-  const showTT = _pressedCodes.has('KeyT');
+  const showTT = [...remapKeys.telem].some(code => _pressedCodes.has(code));
   if (showTT !== showTelemetry) {
     showTelemetry = showTT;
     const tp = getOrCreateTelemPanel();
