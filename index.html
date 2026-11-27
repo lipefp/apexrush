@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-<!-- Apex Rush V38: flexão visual individual dos pneus por carga em curva, frenagem e zebra. Base: V37. -->
+<!-- Apex Rush V39: temperatura individual dos pneus integrada à aderência por eixo. Base: V38. -->
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Apex Rush V38 — Flexão dos Pneus e Dinâmica Visual</title>
+<title>Apex Rush V39 — Pneus e Aderência por Temperatura</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{width:100%;height:100%;overflow:hidden;background:#161826;color:#fff;
@@ -2449,7 +2449,7 @@ function resetRace() {
   sampleTrack(pd, T);
   p.x = T.x + T.nx * pl; p.z = T.z + T.nz * pl; p.h = Math.atan2(T.tx, T.tz);
   p.vx = p.vz = p.vf = p.vl = p.steer = p.v = 0; p.gear = 1; p.manualShiftHold = 0; p.manualDownshifted = false; p.yawR = 0; p._kerbSparkCd = 0;
-  p._throttleFiltered = 0; p._brakeFiltered = 0; brakeTemp = 0; tireTemp4.fill(0); p.idx = nearestIndex(p.x, p.z);
+  p._throttleFiltered = 0; p._brakeFiltered = 0; brakeTemp = 0; tireTemp4.fill(65); p.idx = nearestIndex(p.x, p.z);
   p.dist = pd; p.s = mod(pd, L); p.lat = pl; p.lap = 0; p.cp = NSEC - 1; p.offroad = p.kerb = false; p.hitCd = 0;
   p.finished = false; p.finishTime = 0; p.ers = 1; p.boost = false; p.slip = 0; p.drs = p.drsElig = p.drsZone = false;
   p.comp = tyreIdx; resetDamage(p); p.wear = 0; p.stintLap = 0; p.stratSaid = ''; p._wPrev = null; p.pitT = 0; p.inBox = false; p.w55 = p.w80 = false; p.tyreTemp = 0.35;
@@ -3011,6 +3011,15 @@ function drsStep(r, speed) {
   else { if (r.drsZone) r.drsElig = false; r.drsZone = false; r.drs = false; }
 }
 
+// Temperatura individual por roda: pequena janela de melhor aderência (70–105 °C).
+// A penalidade é progressiva para não criar perda brusca de controle.
+function wheelTempGripC(tempC) {
+  const t = Number.isFinite(tempC) ? tempC : 65;
+  if (t < 70) return 0.94 + 0.06 * clamp(t / 70, 0, 1);
+  if (t <= 105) return 1;
+  return 1 - 0.0032 * Math.min(25, t - 105);
+}
+
 // ---------------------------------------------------------------- Física do jogador
 function stepPlayer(dt, thr, brk, steerIn, hb, ersReq) {
   const p = player;
@@ -3045,6 +3054,12 @@ function stepPlayer(dt, thr, brk, steerIn, hb, ersReq) {
   const loadTransfer = clamp(brake * 0.18 - throttle * 0.075, -0.075, 0.18);
   let gripFront = baseGrip * (1 + loadTransfer) * combinedFront;
   let gripRear = baseGrip * (1 - loadTransfer * 0.72) * combinedRear;
+  // Temperatura real de cada pneu passa a afetar o eixo correspondente.
+  // FL/FR influenciam a frente; RL/RR influenciam a traseira.
+  const frontTempGrip = (wheelTempGripC(tireTemp4[0]) + wheelTempGripC(tireTemp4[1])) * 0.5;
+  const rearTempGrip = (wheelTempGripC(tireTemp4[2]) + wheelTempGripC(tireTemp4[3])) * 0.5;
+  gripFront *= frontTempGrip;
+  gripRear *= rearTempGrip;
   // Sem ABS, a frente perde capacidade lateral quando os pneus começam a travar.
   if (!wheelSt.abs) gripFront *= 1 - brake * 0.18;
   // Acelerar cedo em curva descarrega a frente e aumenta gradualmente o subesterço.
@@ -3605,7 +3620,7 @@ function simulate(dt) {
     if (pl.pitT <= 0) {
       // aplica o composto escolhido no overlay
       pl.comp = pitNextComp;
-      pl.wear = 0; pl.tyreTemp = 0.35; pl.w55 = pl.w80 = false;
+      pl.wear = 0; pl.tyreTemp = 0.35; tireTemp4.fill(65); pl.w55 = pl.w80 = false;
       pl._pitDuration = 0;
       hudCache.tyrePct = ''; hudCache.ersPct = '';
       // Atualiza imediatamente as faixas do modelo 3D, não só o indicador do HUD.
@@ -6235,12 +6250,22 @@ _extrasFrameFn = function(dt) {
   // Temperatura dos 4 pneus
   const sp  = Math.abs(player.vf);
   const slip = Math.abs(player.vl);
-  const heatRate = (slip * 2.5 + sp * 0.04) * dt;
-  const coolRate = (sp * 0.07 + 1.5) * dt;
+  const lateralLoad = clamp(Math.abs(player.steer) * sp / 65, 0, 1);
+  const brakeLoadTyre = clamp(Number(player._brakeFiltered) || inputBrake, 0, 1);
+  const throttleLoadTyre = clamp(Number(player._throttleFiltered) || inputGas, 0, 1);
+  const wetOffset = wet ? -9 : 0;
+  // Diferencia térmica entre rodas: pneus externos aquecem mais nas curvas;
+  // dianteiros recebem carga adicional em frenagem e traseiros na tração.
+  const wheelLoads = [
+    lateralLoad * (player.steer > 0 ? 9 : 2.5) + brakeLoadTyre * 7,
+    lateralLoad * (player.steer < 0 ? 9 : 2.5) + brakeLoadTyre * 7,
+    lateralLoad * (player.steer > 0 ? 7.5 : 2) + throttleLoadTyre * 5,
+    lateralLoad * (player.steer < 0 ? 7.5 : 2) + throttleLoadTyre * 5
+  ];
   for (let i = 0; i < 4; i++) {
-    tireTemp4[i] = Math.max(0, Math.min(120,
-      tireTemp4[i] + heatRate * (0.9 + Math.random() * 0.2) - coolRate * (0.85 + Math.random() * 0.3)
-    ));
+    const targetTemp = clamp(62 + sp * 0.42 + slip * 1.25 + wheelLoads[i] + wetOffset - (player.offroad ? 8 : 0), 42, 122);
+    const response = targetTemp > tireTemp4[i] ? 0.10 : (wet ? 0.13 : 0.065);
+    tireTemp4[i] += (targetTemp - tireTemp4[i]) * Math.min(1, response * dt);
   }
 
   // Telemetria: exibir/ocultar (tecla V)
@@ -6255,7 +6280,7 @@ _extrasFrameFn = function(dt) {
 
   // Rádio warnings automáticos
   if (brakeTemp > 800 && Math.random() < 0.002) radio('Freios superaquecendo, alivie o ritmo.', 'warn', 6);
-  if (player.tyreTemp > 0.92 && Math.hypot(player.vx, player.vz) > 15 && Math.random() < 0.002) radio('Pneus superaquecendo! Alivie a derrapagem.', 'warn', 12);
+  if ((player.tyreTemp > 0.92 || tireTemp4.some(t => t > 112)) && Math.hypot(player.vx, player.vz) > 15 && Math.random() < 0.002) radio('Pneus superaquecendo! Alivie a derrapagem.', 'warn', 12);
   if (player.tyreTemp > 0.6 && player.tyreTemp < 0.8 && Math.random() < 0.001) radio('Pneus na temperatura ideal. Bom ritmo.', 'pb', 30);
 
   updateCockpitHud();
