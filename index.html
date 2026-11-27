@@ -1343,6 +1343,13 @@ function labelTexture(text, bg, fg) {
   const matGravel = new THREE.MeshStandardMaterial({ map: gravelTex, color: 0xffffff, vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide });
   add(ribbon(HW + KERB, 0.012, HW + KERB + 3.2, 0.012, gravelOnTurn, 4.5), matGravel, true);
   add(ribbon(-HW - KERB - 3.2, 0.012, -HW - KERB, 0.012, gravelOnTurn, 4.5), matGravel, true);
+  // Faixa pintada de escape: alternância verde/branco somente nas zonas de curva,
+  // posicionada depois da brita para dar leitura de limite sem invadir o asfalto.
+  const runoffCol = i => Math.abs(KS[i]) > 0.0028
+    ? (Math.floor(CUM[i] / 7.0) & 1 ? 0x168b48 : 0xf0f0f0)
+    : null;
+  add(ribbon(HW + KERB + 3.2, 0.014, HW + KERB + 5.0, 0.014, runoffCol), matKerb);
+  add(ribbon(-HW - KERB - 5.0, 0.014, -HW - KERB - 3.2, 0.014, runoffCol), matKerb);
   const wallCol = i => (Math.floor(CUM[i] / 4.5) & 1) ? 0x2d5fb8 : 0xe8e8e8;
   add(ribbon(WALL, 0, WALL, 1.0, wallCol), matRoad);
   add(ribbon(-WALL, 0, -WALL, 1.0, i => inPitRange(i * DS, 4) ? null : wallCol(i)), matRoad);
@@ -1804,10 +1811,19 @@ function makeCar(color, accent, withWheel, soft) {
   part(GEO.floor, MAT.carbon, 0, 0.1, 0);
   part(GEO.chassis, body, 0, 0.24, 0);
   part(GEO.podR, body, 0, 0.2, 0); part(GEO.podL, body, 0, 0.2, 0);
+  // Inserções de fibra de carbono nas laterais dos sidepods: detalhe visual leve.
+  const sideCarbonGeo = new THREE.BoxGeometry(0.028, 0.105, 0.92);
+  for (const sx of [-1, 1]) {
+    const sideCarbon = part(sideCarbonGeo, MAT.carbon, sx * 0.79, 0.285, -0.12);
+    sideCarbon.material = MAT.carbon;
+  }
   part(GEO.cover, body, 0, 0, 0);
   part(GEO.intake, MAT.carbon, 0, 0.93, -0.27);
   part(GEO.nose, body, 0, 0.4, 0.95);
   part(GEO.fwing, acc, 0, 0.12, 2.4);
+  // Filete técnico escuro na asa dianteira para separar visualmente os planos.
+  const wingEdgeGeo = new THREE.BoxGeometry(1.52, 0.018, 0.035);
+  part(wingEdgeGeo, MAT.carbon, 0, 0.145, 2.49);
   part(GEO.fflap, acc, 0, 0.19, 2.28).rotation.x = 0.35;
   part(GEO.fplate, body, 0.95, 0.2, 2.38); part(GEO.fplate, body, -0.95, 0.2, 2.38);
   part(GEO.cockpit, MAT.carbon, 0, 0.6, 0.3);
@@ -5015,6 +5031,27 @@ function addF1V9Details(root, bounds, wheelPivots = []) {
       for (let k = 0; k < 8; k++) {
         const spoke = new T.Mesh(new T.BoxGeometry(0.018, wheelRadius * 0.62, 0.018), carbonEdge);
         spoke.name = 'V9_Wheel_Spoke'; spoke.position.set(side * wheelWidth * 0.48, 0, 0); spoke.rotation.x = k * Math.PI / 4; wp.add(spoke);
+      }
+      // V28: acabamento do conjunto de freio e cubo; elementos puramente visuais.
+      const faceX = side * (wheelWidth * 0.505);
+      const lockNut = new T.Mesh(new T.CylinderGeometry(wheelRadius * 0.105, wheelRadius * 0.105, 0.035, 12).rotateZ(Math.PI / 2), accent);
+      lockNut.name = 'V28_CenterLockNut'; lockNut.position.set(faceX, 0, 0); wp.add(lockNut);
+      const lockCap = new T.Mesh(new T.CylinderGeometry(wheelRadius * 0.055, wheelRadius * 0.055, 0.039, 12).rotateZ(Math.PI / 2), metal);
+      lockCap.name = 'V28_CenterLockCap'; lockCap.position.set(faceX + side * 0.012, 0, 0); wp.add(lockCap);
+      const ventMat = new T.MeshStandardMaterial({ color: 0x252a31, roughness: 0.8, metalness: 0.18 });
+      for (let h = 0; h < 10; h++) {
+        const a = h * Math.PI * 2 / 10;
+        const hole = new T.Mesh(new T.CylinderGeometry(0.009, 0.009, 0.006, 8).rotateZ(Math.PI / 2), ventMat);
+        hole.name = 'V28_DiscVent'; hole.position.set(-side * wheelWidth * 0.075, Math.cos(a) * wheelRadius * 0.39, Math.sin(a) * wheelRadius * 0.39);
+        wp.add(hole);
+      }
+      // Pequenos parafusos no aro externo, sem alterar pivô ou raio de contato.
+      const boltMat = new T.MeshStandardMaterial({ color: 0xb8bec8, roughness: 0.3, metalness: 0.9 });
+      for (let b = 0; b < 6; b++) {
+        const a = b * Math.PI * 2 / 6;
+        const bolt = new T.Mesh(new T.SphereGeometry(0.012, 8, 6), boltMat);
+        bolt.name = 'V28_RimBolt'; bolt.position.set(faceX, Math.cos(a) * wheelRadius * 0.70, Math.sin(a) * wheelRadius * 0.70);
+        wp.add(bolt);
       }
     }
   });
